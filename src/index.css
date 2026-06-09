@@ -1,0 +1,51 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Tajawal", "Outfit", system-ui, sans-serif;
+  --font-serif: "Outfit", serif;
+}
+
+/* Glassmorphism Global Styles styling for StitchLab */
+.glass-card {
+  background: rgba(255, 255, 255, 0.3) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  box-shadow: 
+    0 8px 32px 0 rgba(139, 92, 246, 0.08) !important,
+    inset 0 0 10px rgba(255, 255, 255, 0.25) !important,
+    0 0 12px rgba(139, 92, 246, 0.05) !important;
+  border-radius: 24px !important;
+  transition: all 0.3s ease-in-out !important;
+}
+
+.glass-card:hover {
+  background: rgba(255, 255, 255, 0.35) !important;
+  box-shadow: 
+    0 12px 40px 0 rgba(139, 92, 246, 0.12) !important,
+    inset 0 0 15px rgba(255, 255, 255, 0.3) !important,
+    0 0 20px rgba(139, 92, 246, 0.12) !important;
+}
+
+.glass-card-dark {
+  background: rgba(15, 23, 42, 0.45) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.35) !important,
+    inset 0 0 10px rgba(255, 255, 255, 0.05) !important,
+    0 0 12px rgba(139, 92, 246, 0.1) !important;
+  border-radius: 24px !important;
+  transition: all 0.3s ease-in-out !important;
+}
+
+.glass-card-dark:hover {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  box-shadow: 
+    0 12px 40px 0 rgba(0, 0, 0, 0.4) !important,
+    inset 0 0 15px rgba(255, 255, 255, 0.08) !important,
+    0 0 20px rgba(139, 92, 246, 0.15) !important;
+}
