@@ -570,6 +570,15 @@ export default function HomeWorkspace({
       const container = document.getElementById("container-65b31b8cd460cca901140c6aee6e1b78");
       if (container) container.innerHTML = "";
 
+      // Configure atOptions globally for stable frame dimensions inside HomeWorkspace
+      (window as any).atOptions = {
+        key: '65b31b8cd460cca901140c6aee6e1b78',
+        format: 'iframe',
+        height: 250,
+        width: 300,
+        params: {}
+      };
+
       const script = document.createElement("script");
       script.id = "adsterra-dynamic-invoke";
       script.async = true;
@@ -1733,28 +1742,29 @@ export default function HomeWorkspace({
                 </p>
               </div>
 
-              {adsterraModal.loading ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-center gap-2 text-xs font-black text-purple-600">
+              <div className="space-y-4">
+                {adsterraModal.loading ? (
+                  <div className="flex items-center justify-center gap-2 text-xs font-black text-purple-600 animate-pulse">
                     <RefreshCw className="w-4 h-4 animate-spin text-purple-500" />
                     <span>جاري استدعاء الإعلان...</span>
                   </div>
-                  {/* Dynamic partner ad insertion container as requested */}
-                  <div className="p-3 bg-purple-950/5 rounded-2xl border border-purple-500/10 min-h-[120px] flex items-center justify-center relative overflow-hidden shadow-inner">
-                    <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[10px] text-slate-400 font-sans text-center font-bold">
-                      جاري تفعيل إعلان Adsterra...
+                ) : (
+                  <div className="bg-lime-50 border border-lime-200 rounded-2xl p-4 flex items-center gap-3 animate-fadeIn">
+                    <div className="w-8 h-8 rounded-full bg-lime-500 text-white flex items-center justify-center text-sm font-black shrink-0">✓</div>
+                    <div className="text-right">
+                      <p className="text-xs font-black text-lime-800">مبارك لك!</p>
+                      <p className="text-[10.5px] text-slate-600 font-bold leading-normal">تم منحك المكافأة وتفعيل الميزة بنجاح.</p>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="bg-lime-50 border border-lime-200 rounded-2xl p-4 flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-lime-500 text-white flex items-center justify-center text-sm font-black shrink-0">✓</div>
-                  <div className="text-right">
-                    <p className="text-xs font-black text-lime-800">مبارك لك!</p>
-                    <p className="text-[10.5px] text-slate-500 font-semibold leading-normal">تم منحك المكافأة فور عودة الاتصال بنجاح.</p>
+                )}
+
+                {/* Dynamic partner ad insertion container - kept persistently mounted to avoid unmounting flicker */}
+                <div className="p-3 bg-purple-950/5 rounded-2xl border border-purple-500/10 min-h-[120px] flex items-center justify-center relative overflow-hidden shadow-innerScale">
+                  <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[10px] text-slate-400 font-sans text-center font-bold">
+                    جاري تفعيل إعلان Adsterra...
                   </div>
                 </div>
-              )}
+              </div>
 
               <div className="pt-2">
                 <button

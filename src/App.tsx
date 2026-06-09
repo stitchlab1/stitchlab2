@@ -26,6 +26,7 @@ import {
 } from "./components/types";
 
 // Import custom workspace sections
+import { supabase, isSupabaseConfigured } from "./supabaseClient";
 import HomeWorkspace from "./components/HomeWorkspace";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
@@ -62,6 +63,8 @@ export default function App() {
   const [userLevel, setUserLevel] = useState<"Beginner" | "Intermediate" | "Advanced">("Intermediate");
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; level: string } | null>(null);
   const [authError, setAuthError] = useState<string>("");
+  const [authSuccessMessage, setAuthSuccessMessage] = useState<string>("");
+  const [authLoading, setAuthLoading] = useState<boolean>(false);
 
   // Main UI Tab States
   const [activeTab, setActiveTab] = useState<"chat" | "analyzer" | "quiz" | "flashcards">("chat");
@@ -283,6 +286,15 @@ export default function App() {
       const container = document.getElementById("container-65b31b8cd460cca901140c6aee6e1b78");
       if (container) container.innerHTML = "";
 
+      // Configure atOptions for stable iframe placement & dimensions
+      (window as any).atOptions = {
+        key: '65b31b8cd460cca901140c6aee6e1b78',
+        format: 'iframe',
+        height: 250,
+        width: 300,
+        params: {}
+      };
+
       const script = document.createElement("script");
       script.id = "adsterra-extra-script";
       script.async = true;
@@ -326,15 +338,54 @@ export default function App() {
   };
 
   // Auth: handle standard logins
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
+    setAuthSuccessMessage("");
+    setAuthLoading(true);
 
     if (!email || !password) {
       setAuthError("الرجاء إدخال البريد الإلكتروني وكلمة المرور.");
+      setAuthLoading(false);
       return;
     }
 
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password
+        });
+        
+        if (error) {
+          throw error;
+        }
+
+        if (data?.user) {
+          const userSession = {
+            name: data.user.user_metadata?.name || data.user.email?.split("@")[0] || "مستخدم Supabase",
+            email: data.user.email || email,
+            level: (data.user.user_metadata?.level as "Beginner" | "Intermediate" | "Advanced") || "Intermediate"
+          };
+          localStorage.setItem("stitchlab_user", JSON.stringify(userSession));
+          setCurrentUser(userSession);
+          setUserLevel(userSession.level);
+          setIsLoggedIn(true);
+        }
+      } catch (err: any) {
+        // Handle common email confirmation error
+        if (err.message?.includes("Email not confirmed")) {
+          setAuthError("لم يتم تأكيد بريدك الإلكتروني بعد. يرجى مراجعة بريدك الإلكتروني والضغط على رابط التأكيد لتتمكن من الدخول.");
+        } else {
+          setAuthError(err.message || "فشل تسجيل الدخول عبر Supabase.");
+        }
+      } finally {
+        setAuthLoading(false);
+      }
+      return;
+    }
+
+    // Fallback to offline local registration
     const savedAuths = localStorage.getItem("stitchlab_registered_users");
     let usersList = [];
     if (savedAuths) {
@@ -364,18 +415,56 @@ export default function App() {
         setAuthError("البريد الإلكتروني أو كلمة المرور غير صحيحة. يمكنك النقر على زر زائر عابر للولوج السريع!");
       }
     }
+    setAuthLoading(false);
   };
 
   // Auth: Register new user
-  const handleSignupSubmit = (e: React.FormEvent) => {
+  const handleSignupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError("");
+    setAuthSuccessMessage("");
+    setAuthLoading(true);
 
     if (!name || !email || !password) {
       setAuthError("جميع الحقول مطلوبة لإنشاء حساب جديد.");
+      setAuthLoading(false);
       return;
     }
 
+    if (isSupabaseConfigured) {
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name: name,
+              level: userLevel
+            },
+            emailRedirectTo: window.location.origin
+          }
+        });
+
+        if (error) {
+          throw error;
+        }
+
+        // Supabase registration sets up confirmation email by default
+        setAuthSuccessMessage("تم إرسال رابط تأكيد الحساب إلى بريدك الإلكتروني بنجاح! يرجى فحص علبة الوارد (أو البريد المزعج/Spam) والضغط على الرابط لتأكيد هويتك وتفعيل الحساب.");
+        
+        // Clean fields
+        setEmail("");
+        setPassword("");
+        setName("");
+      } catch (err: any) {
+        setAuthError(err.message || "فشل إنشاء الحساب عبر Supabase.");
+      } finally {
+        setAuthLoading(false);
+      }
+      return;
+    }
+
+    // Local authentication signup fallback
     const savedAuths = localStorage.getItem("stitchlab_registered_users");
     let usersList = [];
     if (savedAuths) {
@@ -387,6 +476,7 @@ export default function App() {
     const alreadyExists = usersList.some((u: any) => u.email.toLowerCase() === email.toLowerCase());
     if (alreadyExists || email.toLowerCase() === "stitch@lab.com") {
       setAuthError("هذا البريد الإلكتروني مسجل بالفعل لدينا.");
+      setAuthLoading(false);
       return;
     }
 
@@ -398,6 +488,7 @@ export default function App() {
     localStorage.setItem("stitchlab_user", JSON.stringify(userSession));
     setCurrentUser(userSession);
     setIsLoggedIn(true);
+    setAuthLoading(false);
   };
 
   // Fast demo bypass login
@@ -922,6 +1013,13 @@ export default function App() {
                 </div>
               )}
 
+              {authSuccessMessage && (
+                <div className="p-3 mb-4 rounded-xl text-xs bg-emerald-50 border border-emerald-250 text-emerald-800 flex items-start gap-2 leading-relaxed" dir="rtl">
+                  <span className="text-sm">✉️</span>
+                  <span>{authSuccessMessage}</span>
+                </div>
+              )}
+
               {authMode === "login" ? (
                 <form onSubmit={handleLoginSubmit} className="space-y-4">
                   <div className="space-y-1">
@@ -931,10 +1029,11 @@ export default function App() {
                       <input
                         id="login-email-input"
                         type="email"
+                        disabled={authLoading}
                         placeholder="your@email.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all text-left font-mono"
+                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all text-left font-mono disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -946,10 +1045,11 @@ export default function App() {
                       <input
                         id="login-password-input"
                         type="password"
+                        disabled={authLoading}
                         placeholder="••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all text-left font-mono"
+                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition-all text-left font-mono disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -957,10 +1057,11 @@ export default function App() {
                   <button
                     id="submit-login-btn"
                     type="submit"
-                    className="w-full py-3 mt-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={authLoading}
+                    className="w-full py-3 mt-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <span>دخول آمن</span>
-                    <ArrowRight className="w-4 h-4 transform rotate-180" />
+                    <span>{authLoading ? "جاري التحقق من الهوية..." : "دخول آمن"}</span>
+                    {!authLoading && <ArrowRight className="w-4 h-4 transform rotate-180" />}
                   </button>
 
                   <div className="relative flex py-2 items-center">
@@ -974,8 +1075,8 @@ export default function App() {
                       <span className="text-[11px] font-bold text-slate-600">حساب تجريبي فوري وسريع:</span>
                       <span className="text-[10px] bg-pink-100 text-purple-700 px-1.5 py-0.5 rounded border border-pink-200/50 font-mono font-bold">1-Click</span>
                     </div>
-                    <p className="text-[10px] text-slate-550 leading-relaxed font-mono">
-                      البريد: <code className="text-purple-700 font-bold">stitch@lab.com</code> | كلمة المرور: <code className="text-purple-700 font-bold">123456</code>
+                    <p className="text-[10px] text-slate-550 leading-relaxed font-mono font-sans select-all">
+                      البريد: <b className="text-purple-700">stitch@lab.com</b> | كلمة المرور: <b className="text-purple-700">123456</b>
                     </p>
                     <div className="flex gap-2 pt-2">
                       <button
@@ -1000,10 +1101,11 @@ export default function App() {
                       <input
                         id="signup-name-input"
                         type="text"
+                        disabled={authLoading}
                         placeholder="مثال: أحمد الودود"
                         value={name}
                         onChange={(e) => setName(e.target.value)}
-                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 transition-all animate-fadeIn"
+                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 transition-all animate-fadeIn disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -1015,10 +1117,11 @@ export default function App() {
                       <input
                         id="signup-email-input"
                         type="email"
+                        disabled={authLoading}
                         placeholder="name@gmail.com"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 transition-all text-left font-mono"
+                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 transition-all text-left font-mono disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -1030,10 +1133,11 @@ export default function App() {
                       <input
                         id="signup-password-input"
                         type="password"
+                        disabled={authLoading}
                         placeholder="أدخل 6 خانات على الأقل"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 transition-all text-left font-mono"
+                        className="w-full pr-10 pl-4 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500 transition-all text-left font-mono disabled:opacity-60"
                       />
                     </div>
                   </div>
@@ -1042,9 +1146,10 @@ export default function App() {
                     <label className="text-xs font-bold text-slate-600 block">قسّم مستواك الحالي بالإنجليزية</label>
                     <select
                       id="signup-level-select"
+                      disabled={authLoading}
                       value={userLevel}
                       onChange={(e) => setUserLevel(e.target.value as any)}
-                      className="w-full px-3 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 focus:outline-none cursor-pointer"
+                      className="w-full px-3 py-3 bg-white border border-slate-250 rounded-xl text-sm text-slate-800 focus:outline-none cursor-pointer disabled:opacity-60"
                     >
                       <option value="Beginner">مبتدئ - Beginner</option>
                       <option value="Intermediate">متوسط - Intermediate</option>
@@ -1055,10 +1160,11 @@ export default function App() {
                   <button
                     id="submit-signup-btn"
                     type="submit"
-                    className="w-full py-3 mt-2 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={authLoading}
+                    className="w-full py-3 mt-2 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-bold rounded-xl text-sm shadow-md active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
                   >
-                    <span>حبك الكلمات وتأسيس حساب</span>
-                    <ArrowRight className="w-4 h-4 transform rotate-180" />
+                    <span>{authLoading ? "جاري إنشاء الحساب وإرسال رابط التأكيد..." : "حبك الكلمات وتأسيس حساب"}</span>
+                    {!authLoading && <ArrowRight className="w-4 h-4 transform rotate-180" />}
                   </button>
                 </form>
               )}
@@ -1133,27 +1239,29 @@ export default function App() {
                           {extraAdLoading ? "جاري تحميل إعلان الشركاء Adsterra..." : "✓ تم الإكمال وشحن الوقت بنجاح!"}
                         </h4>
                         
-                        {extraAdLoading ? (
-                          <div className="space-y-4">
-                            <div className="flex items-center justify-center gap-2 text-xs font-black text-[#CDFF00]">
+                        <div className="space-y-4">
+                          {extraAdLoading && (
+                            <div className="flex items-center justify-center gap-2 text-xs font-black text-[#CDFF00] animate-pulse">
                               <span className="animate-spin text-lg">⚙️</span>
                               <span>الرجاء المشاهدة لمدة 7 ثوانٍ لربح الـ 15 دقيقة...</span>
                             </div>
-                            
-                            {/* Dynamic Adsterra container */}
-                            <div className="w-full min-h-[160px] flex flex-col justify-center items-center bg-[#150a1b]/95 border border-purple-500/25 rounded-2xl p-4 overflow-hidden shadow-inner relative">
-                              <span className="text-[10px] font-mono text-purple-400 absolute top-2 right-2">Ad Unit</span>
-                              <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[11px] text-slate-300 text-center font-bold">
-                                جاري استدعاء الإعلان...
-                              </div>
+                          )}
+                          
+                          {!extraAdLoading && (
+                            <div className="p-4 bg-[#CDFF00]/10 border border-[#CDFF00]/30 rounded-2xl text-center space-y-2 animate-fadeIn">
+                              <p className="text-xs font-black text-[#CDFF00]">مبارك! تمت إضافة 15 دقيقة بنجاح 🎉</p>
+                              <p className="text-[11px] text-purple-100 font-semibold">أصبح لديك الآن وقت إضافي للمتابعة فوراً.</p>
+                            </div>
+                          )}
+
+                          {/* Dynamic Adsterra container (kept mounted to prevent unmount flickering) */}
+                          <div className="w-full min-h-[165px] flex flex-col justify-center items-center bg-[#150a1b]/95 border border-purple-500/25 rounded-2xl p-4 overflow-hidden shadow-inner relative">
+                            <span className="text-[10px] font-mono text-purple-400 absolute top-2 right-2">Ad Unit</span>
+                            <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[11px] text-slate-300 text-center font-bold">
+                              جاري استدعاء الإعلان...
                             </div>
                           </div>
-                        ) : (
-                          <div className="p-4 bg-[#CDFF00]/10 border border-[#CDFF00]/30 rounded-2xl text-center space-y-2">
-                            <p className="text-xs font-black text-[#CDFF00]">مبارك! تمت إضافة 15 دقيقة بنجاح 🎉</p>
-                            <p className="text-[11px] text-slate-300">أصبح لديك الآن وقت إضافي للمتابعة فوراً.</p>
-                          </div>
-                        )}
+                        </div>
 
                         <button
                           type="button"
