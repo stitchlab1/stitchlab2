@@ -13,7 +13,8 @@ import {
   Compass,
   Trophy,
   Award,
-  HelpCircle
+  HelpCircle,
+  X
 } from "lucide-react";
 import { 
   Persona, 
@@ -28,7 +29,6 @@ import {
 // Import custom workspace sections
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 import HomeWorkspace from "./components/HomeWorkspace";
-import AdsterraBanner from "./components/AdsterraBanner";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
 import CertificatesWorkspace from "./components/CertificatesWorkspace";
@@ -115,10 +115,6 @@ export default function App() {
       return [];
     }
   });
-
-  // Adsterra states in main App controller
-  const [showExtraAdModal, setShowExtraAdModal] = useState<boolean>(false);
-  const [extraAdLoading, setExtraAdLoading] = useState<boolean>(false);
 
   // Quote state
   const [quoteIndex, setQuoteIndex] = useState<number>(0);
@@ -278,40 +274,27 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  // Manage Adsterra script timeout loading for claiming extra time
-  useEffect(() => {
-    if (showExtraAdModal && extraAdLoading) {
-      const timer = setTimeout(() => {
-        setExtraAdLoading(false);
-        setDailySecondsLeft(prev => {
-          const next = prev + (15 * 60); // +15 mins
-          localStorage.setItem("stitchlab_seconds_left", next.toString());
-          return next;
-        });
-        setExtraAdClaimsCount(prev => {
-          const next = Math.min(3, prev + 1);
-          localStorage.setItem("stitchlab_extra_ad_claims", next.toString());
-          return next;
-        });
-      }, 7000); // 7 Seconds load and presentation
-
-      return () => {
-        clearTimeout(timer);
-      };
-    }
-  }, [showExtraAdModal, extraAdLoading]);
-
   const triggerExtraTimeAd = () => {
     if (!navigator.onLine) {
-      alert("عذراً، يرجى التوصيل بالإنترنت لمشاهدة فيديو الإعلان والحصول على وقت إضافي! 📡");
+      alert("عذراً، يرجى الاتصال بالإنترنت للحصول على وقت إضافي! 📡");
       return;
     }
     if (extraAdClaimsCount >= 3) {
       alert("عذراً! لقد استهلكت الحد الأقصى للزيادات المجانية المسموح بها اليوم (3 مرات).");
       return;
     }
-    setShowExtraAdModal(true);
-    setExtraAdLoading(true);
+    
+    setDailySecondsLeft(prevSecs => {
+      const next = prevSecs + (15 * 60); // +15 mins
+      localStorage.setItem("stitchlab_seconds_left", next.toString());
+      return next;
+    });
+    setExtraAdClaimsCount(prevClaims => {
+      const next = Math.min(3, prevClaims + 1);
+      localStorage.setItem("stitchlab_extra_ad_claims", next.toString());
+      return next;
+    });
+    alert("🎉 مبارك! تمت إضافة 15 دقيقة إضافية بنجاح لمواصلة التعلم.");
   };
 
   // Auth: handle standard logins
@@ -1210,59 +1193,13 @@ export default function App() {
                       </p>
                     </div>
 
-                    {showExtraAdModal ? (
-                      <div className="space-y-4 bg-[#2E1E38]/95 backdrop-blur-md rounded-3xl border border-purple-500/30 p-5 shadow-2x">
-                        <h4 className="text-xs font-black text-purple-200">
-                          {extraAdLoading ? "جاري تحميل إعلان الشركاء Adsterra..." : "✓ تم الإكمال وشحن الوقت بنجاح!"}
-                        </h4>
-                        
-                        <div className="space-y-4">
-                          {extraAdLoading && (
-                            <div className="flex items-center justify-center gap-2 text-xs font-black text-[#CDFF00] animate-pulse">
-                              <span className="animate-spin text-lg">⚙️</span>
-                              <span>الرجاء المشاهدة لمدة 7 ثوانٍ لربح الـ 15 دقيقة...</span>
-                            </div>
-                          )}
-                          
-                          {!extraAdLoading && (
-                            <div className="p-4 bg-[#CDFF00]/10 border border-[#CDFF00]/30 rounded-2xl text-center space-y-2 animate-fadeIn">
-                              <p className="text-xs font-black text-[#CDFF00]">مبارك! تمت إضافة 15 دقيقة بنجاح 🎉</p>
-                              <p className="text-[11px] text-purple-100 font-semibold">أصبح لديك الآن وقت إضافي للمتابعة فوراً.</p>
-                            </div>
-                          )}
-
-                          {/* Dynamic Adsterra container - rendered using the stable AdsterraBanner component to prevent flickering or disappearing */}
-                          <div className="w-full flex flex-col justify-center items-center bg-[#150a1b]/95 border border-purple-500/25 rounded-2xl p-2 overflow-hidden shadow-inner relative">
-                            <span className="text-[10px] font-mono text-purple-400 absolute top-2 right-2">Ad Unit</span>
-                            <div className="w-full mt-4">
-                              <AdsterraBanner />
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={extraAdLoading}
-                          onClick={() => {
-                            setShowExtraAdModal(false);
-                          }}
-                          className={`w-full py-3.5 rounded-2xl text-xs font-black transition-all ${
-                            extraAdLoading 
-                              ? "bg-purple-950 text-slate-600 border border-purple-900 cursor-not-allowed"
-                              : "bg-[#CDFF00] hover:bg-[#d4ff1a] text-slate-950 font-black focus:outline-none shadow-md shadow-[#CDFF00]/10 active:scale-95 cursor-pointer"
-                          }`}
-                        >
-                          {extraAdLoading ? "انتظر لثوانٍ..." : "بدء التصفح والمتابعة 🚀"}
-                        </button>
-                      </div>
-                    ) : (
                       <div className="flex flex-col gap-3">
                         <button
                           type="button"
                           onClick={triggerExtraTimeAd}
                           className="w-full max-w-sm mx-auto py-4 px-6 bg-[#CDFF00] hover:bg-[#d6ff1a] text-purple-950 rounded-2xl text-xs font-black transition-all shadow-lg active:scale-95 cursor-pointer flex items-center justify-center gap-2"
                         >
-                          <span>شاهد إعلاناً للحصول على 15 دقيقة إضافية</span>
+                          <span>الحصول على 15 دقيقة إضافية مجاناً</span>
                         </button>
                         <button
                           type="button"
@@ -1272,7 +1209,6 @@ export default function App() {
                           تسجيل الخروج والعودة لاحقاً
                         </button>
                       </div>
-                    )}
                   </div>
                 ) : (
                   /* FAREWELL SCREEN FOR 90m ACCESS EXCLUSION (LIME ON DARK MAUVE) */

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
-import { AdsterraBanner } from "./AdsterraBanner";
 
 
 interface LearningLevel {
@@ -431,12 +430,6 @@ export default function HomeWorkspace({
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== "undefined" ? navigator.onLine : true);
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
   const [showInstallBanner, setShowInstallBanner] = useState<boolean>(false);
-  const [adsterraModal, setAdsterraModal] = useState<{
-    open: boolean;
-    loading: boolean;
-    success: boolean;
-    actionType: "extra_time" | "new_group";
-  }>({ open: false, loading: false, success: false, actionType: "extra_time" });
 
   useEffect(() => {
     const handleOnlineStatus = () => setIsOnline(navigator.onLine);
@@ -536,8 +529,9 @@ export default function HomeWorkspace({
   const handlePwaAction = (action: "extra_time" | "new_group", chosenGroupKey?: string) => {
     // Save current action so we can resume automatically as soon as internet returns
     setLastAttemptedAction(action);
-    if (chosenGroupKey) {
-      setPendingUnlockGroupKey(chosenGroupKey);
+    const resolvedGroupKey = chosenGroupKey || allSortedGroups.find(g => !isGroupSequenceUnlocked(g.key))?.key || null;
+    if (resolvedGroupKey) {
+      setPendingUnlockGroupKey(resolvedGroupKey);
     }
 
     // 1. Check navigator.onLine for smart internet detection
@@ -547,51 +541,24 @@ export default function HomeWorkspace({
     }
 
     setOfflineError(null);
-    if (chosenGroupKey) {
-      setPendingUnlockGroupKey(chosenGroupKey);
+
+    // Apply reward instantly while the Social Bar runs universally
+    if (action === "extra_time") {
+      setBonusMinutes(prevBonus => prevBonus + 15);
+      alert("🎉 مبارك! تمت إضافة 15 دقيقة إضافية مجاناً لحسابك لمواصلة التعلم.");
     } else {
-      const firstLocked = allSortedGroups.find(g => !isGroupSequenceUnlocked(g.key));
-      setPendingUnlockGroupKey(firstLocked?.key || null);
-    }
-
-    setAdsterraModal({
-      open: true,
-      loading: true,
-      success: false,
-      actionType: action
-    });
-  };
-
-  // Handle timer simulation for Adsterra rewards credit inside HomeWorkspace
-  useEffect(() => {
-    if (adsterraModal.open && adsterraModal.loading) {
-      // Finish watch process after a brief wait of 7 seconds to award credit
-      const timer = setTimeout(() => {
-        setAdsterraModal(prev => ({
-          ...prev,
-          loading: false,
-          success: true
-        }));
-
-        if (adsterraModal.actionType === "extra_time") {
-          setBonusMinutes(prev => prev + 15);
-        } else {
-          if (pendingUnlockGroupKey) {
-            onUnlockGroup(pendingUnlockGroupKey);
-          } else {
-            const firstLocked = allSortedGroups.find(g => !isGroupSequenceUnlocked(g.key));
-            if (firstLocked) {
-              onUnlockGroup(firstLocked.key);
-            }
-          }
+      if (resolvedGroupKey) {
+        onUnlockGroup(resolvedGroupKey);
+        alert("🔓 مبارك! تم فتح قفل المجموعة الدراسية بنجاح.");
+      } else {
+        const firstLocked = allSortedGroups.find(g => !isGroupSequenceUnlocked(g.key));
+        if (firstLocked) {
+          onUnlockGroup(firstLocked.key);
+          alert("🔓 مبارك! تم فتح قفل المجموعة الدراسية بنجاح.");
         }
-      }, 7000);
-
-      return () => {
-        clearTimeout(timer);
-      };
+      }
     }
-  }, [adsterraModal.open, adsterraModal.loading, pendingUnlockGroupKey, allSortedGroups, onUnlockGroup]);
+  };
 
   // Re-connect trigger: as soon as internet returns, load ad automatically to reward/unlock item!
   useEffect(() => {
@@ -1692,75 +1659,6 @@ export default function HomeWorkspace({
       )}
 
       {/* ADSTERRA ADVERTISER OVERLAY */}
-      {adsterraModal.open && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-[60] animate-fadeIn" dir="rtl">
-          <div className="bg-white rounded-[32px] max-w-sm w-full border border-purple-100 overflow-hidden shadow-2xl relative">
-            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-purple-500 via-pink-400 to-purple-600 animate-pulse"></div>
-            
-            <div className="p-6 text-center space-y-5">
-              <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center mx-auto text-xl border border-purple-100 shadow-sm animate-bounce">
-                📺
-              </div>
-              
-              <div>
-                <span className="text-[9px] bg-purple-100 text-purple-700 uppercase tracking-widest px-3 py-1 rounded-full border border-purple-200 font-extrabold">
-                  شريك الإعلانات الذكي Adsterra
-                </span>
-                <h3 className="text-sm font-black text-slate-800 mt-2.5">
-                  {adsterraModal.loading ? "جاري تحميل الإعلان لفتح القفل..." : "✓ تم فتح قفل الميزة بنجاح!"}
-                </h3>
-                <p className="text-xs text-slate-500 mt-1.5 font-sans leading-relaxed">
-                  {adsterraModal.loading 
-                    ? "الرجاء الانتظار لثوانٍ معدودة لعرض الإعلان وتفعيل طلب المكافأة الخاصة بك" 
-                    : adsterraModal.actionType === "extra_time" 
-                      ? "تم شحن رصيدك بـ 15 دقيقة وقت إضافي كهدية من StitchLab! 🎉" 
-                      : "تم إلغاء قفل وتحديث مجموعات دراسية جديدة مخصصة لك بالكامل! 🔓"
-                  }
-                </p>
-              </div>
-
-              <div className="space-y-4">
-                {adsterraModal.loading ? (
-                  <div className="flex items-center justify-center gap-2 text-xs font-black text-purple-600 animate-pulse">
-                    <RefreshCw className="w-4 h-4 animate-spin text-purple-500" />
-                    <span>جاري استدعاء الإعلان...</span>
-                  </div>
-                ) : (
-                  <div className="bg-lime-50 border border-lime-200 rounded-2xl p-4 flex items-center gap-3 animate-fadeIn">
-                    <div className="w-8 h-8 rounded-full bg-lime-500 text-white flex items-center justify-center text-sm font-black shrink-0">✓</div>
-                    <div className="text-right">
-                      <p className="text-xs font-black text-lime-800">مبارك لك!</p>
-                      <p className="text-[10.5px] text-slate-600 font-bold leading-normal">تم منحك المكافأة وتفعيل الميزة بنجاح.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Dynamic partner ad insertion container - rendered using stable AdsterraBanner component to prevent unmounting flicker */}
-                <div className="p-3 bg-purple-950/5 rounded-2xl border border-purple-500/10 flex items-center justify-center relative overflow-hidden">
-                  <div className="w-full mt-2">
-                    <AdsterraBanner />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button
-                  type="button"
-                  disabled={adsterraModal.loading}
-                  onClick={() => setAdsterraModal(prev => ({ ...prev, open: false }))}
-                  className={`w-full py-3 rounded-xl text-xs font-extrabold transition-all shadow-md active:scale-95 flex items-center justify-center gap-1 cursor-pointer ${
-                    adsterraModal.loading 
-                      ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed" 
-                      : "bg-purple-600 hover:bg-purple-700 text-white shadow-md shadow-purple-200"
-                  }`}
-                >
-                  <span>{adsterraModal.loading ? "انتظر لحظة..." : "إغلاق والعودة للتحدي"}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
