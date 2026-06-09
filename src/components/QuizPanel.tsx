@@ -165,17 +165,19 @@ export default function QuizPanel({
                 
                 {/* Grading Summary header */}
                 {submittedQuiz && (
-                  <div className={`p-4 rounded-2xl border text-center space-y-1.5 ${
-                    quizScore >= 80
-                      ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
-                      : "bg-indigo-550/15 border-indigo-500/20 text-indigo-200"
+                  <div className={`p-5 rounded-2xl border text-center space-y-2 ${
+                    quizScore >= 70
+                      ? "bg-emerald-500/10 border-emerald-500/35 text-emerald-300"
+                      : "bg-rose-500/10 border-rose-500/35 text-rose-350"
                   }`}>
-                    <h4 className="text-sm font-black">🏁 تم تصحيح اختبارك بنجاح!</h4>
-                    <p className="text-2xl font-black font-mono">{quizScore}%</p>
-                    <p className="text-[10px]" dir="rtl">
-                      {quizScore >= 80 
-                        ? "ممتاز! لقد تفوقت في هذا الموضوع وفهمت مفاصله النحوية بجدارة تامة!" 
-                        : "مستوى طيب، ننصحك بقراءة التبريرات بالأسفل وصقل الجمل لتلافي الغفلات لاحقاً."}
+                    <h4 className="text-sm font-black flex items-center justify-center gap-2">
+                      {quizScore >= 70 ? "🎉 Great job! أحسنت صنعاً" : "⚠️ Try again! حاول مجدداً"}
+                    </h4>
+                    <p className="text-3xl font-black font-mono">{quizScore}%</p>
+                    <p className="text-[10px] text-slate-350 leading-relaxed" dir="rtl">
+                      {quizScore >= 70 
+                        ? "رائع جداً! لقد تفوقت في هذا الموضوع وفهمت مفاصل المادة اللغوية وعززت مهاراتك بجدارة تامة!" 
+                        : "مستوى متوسط، ننصحك بقراءة تبريرات المعلم المرفقة أسفل كل سؤال، وصقل معلوماتك للمحاولة مجدداً."}
                     </p>
                   </div>
                 )}

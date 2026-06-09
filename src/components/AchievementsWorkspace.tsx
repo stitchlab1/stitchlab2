@@ -35,47 +35,158 @@ export default function AchievementsWorkspace({
   // Compute percentage progress
   const progressPercent = Math.round((completedLevels.length / 9) * 100);
 
-  // Hardcoded highly attractive achievements badges
+  // Load supporting states from localStorage for advanced metrics
+  const completedGroups = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem("stitchlab_completed_groups");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  }, []);
+
+  const analyzedCount = React.useMemo(() => {
+    const val = localStorage.getItem("stitchlab_analyzed_count");
+    return val ? parseInt(val, 10) : 0;
+  }, []);
+
+  const customCardsCount = React.useMemo(() => {
+    try {
+      const saved = localStorage.getItem("stitchlab_custom_cards");
+      return saved ? JSON.parse(saved).length : 0;
+    } catch (e) {
+      return 0;
+    }
+  }, []);
+
+  // Compute calculated values
+  const totalWordsLearned = customCardsCount + (completedGroups.length * 4);
+  
+  const streakDays = React.useMemo(() => {
+    const savedVisitDates = localStorage.getItem("stitchlab_visit_dates");
+    let dates: string[] = [];
+    try {
+      dates = savedVisitDates ? JSON.parse(savedVisitDates) : [];
+    } catch (e) {
+      dates = [];
+    }
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (!dates.includes(todayStr)) {
+      dates.push(todayStr);
+      dates.sort();
+      localStorage.setItem("stitchlab_visit_dates", JSON.stringify(dates));
+    }
+    
+    if (dates.length === 0) return 0;
+    
+    let streak = 0;
+    let cursor = new Date();
+    while (true) {
+      const cursorStr = cursor.toISOString().split('T')[0];
+      if (dates.includes(cursorStr)) {
+        streak++;
+        cursor.setDate(cursor.getDate() - 1);
+      } else {
+        break;
+      }
+    }
+    
+    if (streak === 0 && dates.length > 0) {
+      let yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+      if (dates.includes(yesterdayStr)) {
+        streak = 1;
+        let cursor = new Date(yesterday);
+        cursor.setDate(cursor.getDate() - 1);
+        while (true) {
+          const cursorStr = cursor.toISOString().split('T')[0];
+          if (dates.includes(cursorStr)) {
+            streak++;
+            cursor.setDate(cursor.getDate() - 1);
+          } else {
+            break;
+          }
+        }
+      }
+    }
+    return streak;
+  }, []);
+
+  // The custom responsive user requested list of achievements
   const BADGES = [
     {
-      id: "soho",
-      title: "مرحب Soho (Soho Explorer)",
-      requirement: "أكمل المستوى 1 لكسر الجمود",
-      icon: "🌸",
-      unlocked: completedLevels.includes(1),
-      colorClass: "from-pink-100 to-pink-200 border-pink-400 text-pink-700"
+      id: "first_10_words",
+      title: "أول 10 كلمات",
+      requirement: "تعلم 10 كلمات جديدة",
+      icon: "📚",
+      unlocked: totalWordsLearned >= 10,
+      colorClass: "from-[#f2a2b1]/20 to-[#dd7390]/10 border-[#f2a2b1] text-purple-950",
+      progress: `${Math.min(totalWordsLearned, 10)} / 10 كلمة`
     },
     {
-      id: "barista",
-      title: "ذواق القهوة (Barista Speaker)",
-      requirement: "أكمل المستوى 2 للتبادل المهذب",
-      icon: "☕",
-      unlocked: completedLevels.includes(2),
-      colorClass: "from-amber-100 to-amber-200 border-amber-400 text-amber-800"
+      id: "first_grammar",
+      title: "أول قاعدة",
+      requirement: "أكمل أول قاعدة نحوية",
+      icon: "✍️",
+      unlocked: analyzedCount >= 1 || completedLevels.length >= 1,
+      colorClass: "from-amber-100/30 to-yellow-100/20 border-amber-300 text-amber-900",
+      progress: `${(analyzedCount >= 1 || completedLevels.length >= 1) ? 1 : 0} / 1 قاعدة`
     },
     {
-      id: "professional",
-      title: "المحترف الطموح (Talent Candidate)",
-      requirement: "أكمل المستوى 3 في مقابلة العمل",
-      icon: "💼",
-      unlocked: completedLevels.includes(3),
-      colorClass: "from-teal-100 to-teal-200 border-teal-400 text-teal-800"
+      id: "semester_1_complete",
+      title: "إنهاء الترم الأول",
+      requirement: "أنهِ جميع دروس الترم الأول",
+      icon: "🎓",
+      unlocked: completedLevels.includes(1) && completedLevels.includes(2) && completedLevels.includes(3),
+      colorClass: "from-sky-100/40 to-blue-50/20 border-sky-305 text-sky-900",
+      progress: `${[1, 2, 3].filter(l => completedLevels.includes(l)).length} / 3 مستويات`
     },
     {
-      id: "officer",
-      title: "المسافر الجريء (JFK Explorer)",
-      requirement: "أكمل المستوى 4 لعبور الجوازات",
-      icon: "✈️",
-      unlocked: completedLevels.includes(4),
-      colorClass: "from-sky-100 to-sky-200 border-sky-400 text-sky-850"
+      id: "streak_7_days",
+      title: "دخول 7 أيام متتالية",
+      requirement: "ادخل التطبيق 7 أيام بالتتابع",
+      icon: "🔥",
+      unlocked: streakDays >= 7,
+      colorClass: "from-orange-100/30 to-red-50/20 border-orange-355 text-orange-900",
+      progress: `${streakDays} / 7 أيام`
     },
     {
-      id: "linguist",
-      title: "عالم اللغويات (Duolingo Guru)",
-      requirement: "أطلق جميع المستويات الـ 9 بنجاح",
-      icon: "🌟",
-      unlocked: unlockedLevel === 9,
-      colorClass: "from-indigo-100 to-indigo-200 border-indigo-400 text-indigo-800"
+      id: "full_level_complete",
+      title: "إنهاء مستوى كامل",
+      requirement: "أنهِ مستوى تعليمي كامل",
+      icon: "🏆",
+      unlocked: completedLevels.length >= 1,
+      colorClass: "from-emerald-100/30 to-teal-50/20 border-emerald-355 text-emerald-900",
+      progress: `${completedLevels.length} / 1 مستويات`
+    },
+    {
+      id: "words_hero",
+      title: "بطل الكلمات",
+      requirement: "تعلم 100 كلمة جديدة",
+      icon: "🦁",
+      unlocked: totalWordsLearned >= 100,
+      colorClass: "from-[#c0c6f4]/30 to-indigo-50/20 border-[#c0c6f4] text-indigo-900",
+      progress: `${Math.min(totalWordsLearned, 100)} / 100 كلمة`
+    },
+    {
+      id: "grammar_star",
+      title: "نجم القواعد",
+      requirement: "أتقن 10 قواعد نحوية",
+      icon: "⭐",
+      unlocked: analyzedCount >= 10 || completedLevels.length >= 5,
+      colorClass: "from-yellow-100/40 to-amber-50/20 border-yellow-355 text-amber-950",
+      progress: `${Math.min(analyzedCount, 10)} / 10 قواعد`
+    },
+    {
+      id: "persistent_learner",
+      title: "متعلم مثابر",
+      requirement: "أكمل 30 درسًا",
+      icon: "⚡",
+      unlocked: completedGroups.length >= 30,
+      colorClass: "from-purple-100/30 to-pink-50/20 border-purple-355 text-[#dd7390]",
+      progress: `${Math.min(completedGroups.length, 30)} / 30 درسًا`
     }
   ];
 
@@ -168,35 +279,44 @@ export default function AchievementsWorkspace({
 
       {/* Achievements Badges Grid */}
       <div className="space-y-4">
-        <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-          <span>🥇 أوسمة وشارات الكفاءة والتميز (Achievement Badges):</span>
-        </h3>
+        <div className="border-r-4 border-purple-500 pr-3 py-1">
+          <h3 className="text-base font-black text-slate-800">قائمة الإنجازات</h3>
+          <p className="text-xs text-slate-500 font-bold mt-0.5">افتح الإنجازات بإكمال الدروس والتحديات</p>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {BADGES.map((badge) => (
             <div
               key={badge.id}
-              className={`p-4 rounded-3xl border flex items-start gap-4 transition-all ${
+              className={`p-4 rounded-3xl border flex items-start gap-4 transition-all relative overflow-hidden ${
                 badge.unlocked
-                  ? `bg-slate-50 hover:bg-slate-100/50 border-slate-200`
-                  : "bg-slate-50/50 border-slate-100/80 opacity-50"
+                  ? `bg-white hover:shadow-md border-purple-200 shadow-sm`
+                  : "bg-slate-100/60 border-slate-200/80 opacity-65"
               }`}
             >
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 ${badge.unlocked ? 'bg-indigo-50 shadow-md' : 'bg-slate-200'}`}>
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 ${
+                badge.unlocked 
+                  ? 'bg-purple-50 border border-purple-100 shadow-sm' 
+                  : 'bg-slate-200/85 border border-slate-300 text-slate-400'
+              }`}>
                 {badge.unlocked ? badge.icon : "🔒"}
               </div>
-              <div className="space-y-1">
-                <h4 className="text-xs font-extrabold flex items-center gap-1.5 text-slate-800">
+              <div className="space-y-1 flex-1">
+                <h4 className="text-xs font-black flex items-center gap-1.5 text-slate-800 justify-between">
                   <span>{badge.title}</span>
                   {badge.unlocked ? (
-                    <span className="text-[8px] bg-emerald-100 text-emerald-700 px-1.5 py-0.2 rounded-full font-black">نشطة ✓</span>
+                    <span className="text-[9px] bg-purple-600 text-white px-2 py-0.5 rounded-full font-extrabold shadow-sm shadow-purple-200">مكتملة ✓</span>
                   ) : (
-                    <span className="text-[8px] bg-slate-200 text-slate-500 px-1.5 py-0.2 rounded-full">محجوبة</span>
+                    <span className="text-[9px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">مقفلة</span>
                   )}
                 </h4>
-                <p className="text-[10px] text-slate-500">
-                  {badge.unlocked ? "تم فتح الوسام بنجاح! أحسنت." : badge.requirement}
+                <p className="text-[11.5px] text-slate-650 font-bold">
+                  {badge.requirement}
                 </p>
+                <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1.5 text-[9.5px]">
+                  <span className="text-slate-400">مؤشر التقدم:</span>
+                  <span className="font-mono font-black text-purple-600">{badge.progress}</span>
+                </div>
               </div>
             </div>
           ))}

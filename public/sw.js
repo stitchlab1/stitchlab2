@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v2";
+const CACHE_VERSION = "v3";
 const STATIC_CACHE_NAME = `stitchlab-static-${CACHE_VERSION}`;
 const IMAGE_CACHE_NAME = `stitchlab-images-${CACHE_VERSION}`;
 
@@ -6,7 +6,7 @@ const ASSETS_TO_PRECACHE = [
   "/",
   "/index.html",
   "/manifest.json",
-  "https://ais-pre-yr7vuwqju6v52jgcgrdxgx-220375696903.europe-west2.run.app/assets/file_000000007e6c71f4868ae4f798c2c5cc_112808.png"
+  "/stitchLab_Icon_HD.png"
 ];
 
 // Install Event - Pre-cache core files for immediate offline load
@@ -143,7 +143,7 @@ self.addEventListener("fetch", (event) => {
             return networkResponse;
           }).catch(() => {
             // Return an offline icon placeholder if network load fails and not cached
-            return caches.match("https://ais-pre-yr7vuwqju6v52jgcgrdxgx-220375696903.europe-west2.run.app/assets/file_000000007e6c71f4868ae4f798c2c5cc_112808.png");
+            return caches.match("/stitchLab_Icon_HD.png");
           });
         });
       })
@@ -151,36 +151,29 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // 3. CORE SITE FILES STRATEGY (Cache-First, update background asynchronously)
+  // 3. CORE SITE FILES STRATEGY (Network-First, falling back to cache when offline)
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
-      // Fetch dynamic fresh content from network in all situations to update cache for next time
-      const networkFetch = fetch(request).then((networkResponse) => {
+    fetch(request)
+      .then((networkResponse) => {
         if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
           caches.open(STATIC_CACHE_NAME).then((cache) => {
-            cache.put(request, networkResponse.clone());
+            cache.put(request, responseClone);
           });
         }
         return networkResponse;
-      }).catch(() => {
-        // Quiet silence failure for background updates
-      });
-
-      if (cachedResponse) {
-        // Return instantly from cache!
-        return cachedResponse;
-      }
-
-      // If not in cache, wait for the actual network fetch
-      return networkFetch.then((res) => {
-        if (res) return res;
-        return fetch(request);
-      }).catch(() => {
-        // Fallback for navigation page requests when totally offline
-        if (request.mode === "navigate") {
-          return caches.match("/");
-        }
-      });
-    })
+      })
+      .catch(() => {
+        // Offline fallback: try cache match
+        return caches.match(request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          // Fallback for navigation page requests when totally offline
+          if (request.mode === "navigate") {
+            return caches.match("/");
+          }
+        });
+      })
   );
 });

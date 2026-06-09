@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
+import { playAudioFeedback } from "./types";
+
 
 interface LearningLevel {
   number: number;
@@ -23,6 +25,10 @@ interface HomeWorkspaceProps {
   onLevelComplete: (lvlNum: number) => void;
   onResetProgress: () => void;
   LEARNING_LEVELS: LearningLevel[];
+  dailySecondsLeft: number;
+  extraAdClaimsCount: number;
+  unlockedAdvertiserGroups: string[];
+  onUnlockGroup: (groupKey: string) => void;
 }
 
 interface SheetWord {
@@ -355,7 +361,11 @@ export default function HomeWorkspace({
   onLevelStart,
   onLevelComplete,
   onResetProgress,
-  LEARNING_LEVELS
+  LEARNING_LEVELS,
+  dailySecondsLeft,
+  extraAdClaimsCount,
+  unlockedAdvertiserGroups,
+  onUnlockGroup
 }: HomeWorkspaceProps) {
   const [sheetWords, setSheetWords] = useState<SheetWord[]>(() => {
     const saved = localStorage.getItem("stitchlab_sheet_words");
@@ -405,6 +415,7 @@ export default function HomeWorkspace({
   const [singleInput, setSingleInput] = useState<string>("");
   const [successCount, setSuccessCount] = useState<number>(0);
   const [showTryAgain, setShowTryAgain] = useState<boolean>(false);
+  const [spellingFeedback, setSpellingFeedback] = useState<{ type: "success" | "error" | null; msg: string }>({ type: null, msg: "" });
   
   const [isListening, setIsListening] = useState<boolean>(false);
   const [speechStatus, setSpeechStatus] = useState<string>("");
@@ -468,65 +479,6 @@ export default function HomeWorkspace({
     setShowInstallBanner(false);
   };
 
-  const handlePwaAction = (action: "extra_time" | "new_group") => {
-    // 1. Check navigator.onLine for smart internet detection
-    if (!navigator.onLine) {
-      setOfflineError("عذراً! الجهاز غير متصل بالإنترنت. يرجى تفعيل اتصال الإنترنت لفتح مجموعة جديدة أو طلب وقت إضافي! 🔒");
-      return;
-    }
-
-    setOfflineError(null);
-    setAdsterraModal({
-      open: true,
-      loading: true,
-      success: false,
-      actionType: action
-    });
-
-    // Load actual Adsterra script integration wrapper and simulate a beautifully framed loader overlay
-    const scriptId = "adsterra-smart-loader";
-    let existingScript = document.getElementById(scriptId);
-    if (!existingScript) {
-      const script = document.createElement("script");
-      script.id = scriptId;
-      script.type = "text/javascript";
-      // Simulated or actual Adsterra static partner endpoint inside sandbox
-      script.src = "//www.highperformanceformat.com/8cb56a29be1fc670f5e7f1bf25b6028a/invoke.js";
-      script.async = true;
-      document.head.appendChild(script);
-    }
-
-    // Interactive reward unlocking trigger after 2.5s display 
-    setTimeout(() => {
-      setAdsterraModal(prev => ({
-        ...prev,
-        loading: false,
-        success: true
-      }));
-
-      if (action === "extra_time") {
-        setBonusMinutes(prev => prev + 15);
-      } else {
-        // Automatically unlock a student group target by unlocking next level in line
-        const targetNext = Math.min(9, unlockedLevel + 1);
-        onLevelComplete(unlockedLevel);
-      }
-    }, 2500);
-  };
-
-  // Re-connect trigger: as soon as internet returns, load ad automatically to reward/unlock item!
-  useEffect(() => {
-    const handleOnline = () => {
-      if (offlineError) {
-        setOfflineError(null);
-        // Automatically reward with extra time / run ad loader!
-        handlePwaAction("extra_time");
-      }
-    };
-    window.addEventListener("online", handleOnline);
-    return () => window.removeEventListener("online", handleOnline);
-  }, [offlineError]);
-
   const [completedGroups, setCompletedGroups] = useState<string[]>(() => {
     const saved = localStorage.getItem("stitchlab_completed_groups");
     try {
@@ -535,6 +487,137 @@ export default function HomeWorkspace({
       return [];
     }
   });
+
+  const allSortedGroups = useMemo(() => {
+    const uniqueCombosMap = new Map<string, { level: number; semester: string; group: string; key: string }>();
+    sheetWords.forEach(w => {
+      if (w.level && w.semester && w.group && w.group.trim() && w.semester.trim()) {
+        const lvl = w.level;
+        const sem = w.semester.trim();
+        const grp = w.group.trim();
+        const key = `${lvl}_${sem}_${grp}`;
+        if (!uniqueCombosMap.has(key)) {
+          uniqueCombosMap.set(key, { level: lvl, semester: sem, group: grp, key });
+        }
+      }
+    });
+
+    const list = Array.from(uniqueCombosMap.values());
+    
+    // Sort sequence: Level, Semester, Group
+    list.sort((a, b) => {
+      if (a.level !== b.level) {
+        return a.level - b.level;
+      }
+      if (a.semester !== b.semester) {
+        return a.semester.localeCompare(b.semester, "ar");
+      }
+      return a.group.localeCompare(b.group, "ar");
+    });
+
+    return list;
+  }, [sheetWords]);
+
+  const isGroupSequenceUnlocked = useCallback((groupKey: string): boolean => {
+    const list = allSortedGroups;
+    if (list.length === 0) return true;
+    
+    const index = list.findIndex(g => g.key === groupKey);
+    if (index <= 0) {
+      return true;
+    }
+    return unlockedAdvertiserGroups.includes(groupKey) || completedGroups.includes(groupKey);
+  }, [allSortedGroups, unlockedAdvertiserGroups, completedGroups]);
+
+  const [pendingUnlockGroupKey, setPendingUnlockGroupKey] = useState<string | null>(null);
+  const [lastAttemptedAction, setLastAttemptedAction] = useState<"extra_time" | "new_group">("extra_time");
+
+  const handlePwaAction = (action: "extra_time" | "new_group", chosenGroupKey?: string) => {
+    // Save current action so we can resume automatically as soon as internet returns
+    setLastAttemptedAction(action);
+    if (chosenGroupKey) {
+      setPendingUnlockGroupKey(chosenGroupKey);
+    }
+
+    // 1. Check navigator.onLine for smart internet detection
+    if (!navigator.onLine) {
+      setOfflineError("عذراً الجهاز غير متصل بالإنترنت. يرجى التحقق من اتصالك بالشبكة لتنزيل وفتح فصول المجموعات الجديدة وإضافة وقت التعلم المكافء! 📡");
+      return;
+    }
+
+    setOfflineError(null);
+    if (chosenGroupKey) {
+      setPendingUnlockGroupKey(chosenGroupKey);
+    } else {
+      const firstLocked = allSortedGroups.find(g => !isGroupSequenceUnlocked(g.key));
+      setPendingUnlockGroupKey(firstLocked?.key || null);
+    }
+
+    setAdsterraModal({
+      open: true,
+      loading: true,
+      success: false,
+      actionType: action
+    });
+  };
+
+  // Inject real Adsterra script tag and invoke container integration dynamically on modal open
+  useEffect(() => {
+    if (adsterraModal.open && adsterraModal.loading) {
+      const oldScript = document.getElementById("adsterra-dynamic-invoke");
+      if (oldScript) oldScript.remove();
+
+      const container = document.getElementById("container-65b31b8cd460cca901140c6aee6e1b78");
+      if (container) container.innerHTML = "";
+
+      const script = document.createElement("script");
+      script.id = "adsterra-dynamic-invoke";
+      script.async = true;
+      script.setAttribute("data-cfasync", "false");
+      script.src = "https://pl29689018.effectivecpmnetwork.com/65b31b8cd460cca901140c6aee6e1b78/invoke.js";
+      document.head.appendChild(script);
+
+      // Finish watch process after a brief wait of 7 seconds to award credit
+      const timer = setTimeout(() => {
+        setAdsterraModal(prev => ({
+          ...prev,
+          loading: false,
+          success: true
+        }));
+
+        if (adsterraModal.actionType === "extra_time") {
+          setBonusMinutes(prev => prev + 15);
+        } else {
+          if (pendingUnlockGroupKey) {
+            onUnlockGroup(pendingUnlockGroupKey);
+          } else {
+            const firstLocked = allSortedGroups.find(g => !isGroupSequenceUnlocked(g.key));
+            if (firstLocked) {
+              onUnlockGroup(firstLocked.key);
+            }
+          }
+        }
+      }, 7000);
+
+      return () => {
+        clearTimeout(timer);
+        const scr = document.getElementById("adsterra-dynamic-invoke");
+        if (scr) scr.remove();
+      };
+    }
+  }, [adsterraModal.open, adsterraModal.loading, pendingUnlockGroupKey, allSortedGroups, onUnlockGroup]);
+
+  // Re-connect trigger: as soon as internet returns, load ad automatically to reward/unlock item!
+  useEffect(() => {
+    const handleOnline = () => {
+      if (offlineError) {
+        setOfflineError(null);
+        handlePwaAction(lastAttemptedAction, pendingUnlockGroupKey || undefined);
+      }
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [offlineError, lastAttemptedAction, pendingUnlockGroupKey]);
 
   const [sheetLinkInput, setSheetLinkInput] = useState(() => {
     return localStorage.getItem("stitchlab_sheet_link") || "https://docs.google.com/spreadsheets/d/1BtCUNuf34uVEaQS_hPbINw0-ogACWzyKsN426QftNwI/edit?usp=drivesdk";
@@ -575,49 +658,6 @@ export default function HomeWorkspace({
     return DEFAULT_SHEET_WORDS.filter(w => w.level === activeTrainingLevel.number);
   }, [activeTrainingLevel, sheetWords, activeTrainingSemester, activeTrainingGroup]);
 
-  const allSortedGroups = useMemo(() => {
-    const uniqueCombosMap = new Map<string, { level: number; semester: string; group: string; key: string }>();
-    sheetWords.forEach(w => {
-      if (w.level && w.semester && w.group && w.group.trim() && w.semester.trim()) {
-        const lvl = w.level;
-        const sem = w.semester.trim();
-        const grp = w.group.trim();
-        const key = `${lvl}_${sem}_${grp}`;
-        if (!uniqueCombosMap.has(key)) {
-          uniqueCombosMap.set(key, { level: lvl, semester: sem, group: grp, key });
-        }
-      }
-    });
-
-    const list = Array.from(uniqueCombosMap.values());
-    
-    // Sort sequence: Level, Semester, Group
-    list.sort((a, b) => {
-      if (a.level !== b.level) {
-        return a.level - b.level;
-      }
-      if (a.semester !== b.semester) {
-        return a.semester.localeCompare(b.semester, "ar");
-      }
-      return a.group.localeCompare(b.group, "ar");
-    });
-
-    return list;
-  }, [sheetWords]);
-
-  const isGroupSequenceUnlocked = useCallback((groupKey: string): boolean => {
-    const list = allSortedGroups;
-    if (list.length === 0) return true;
-    
-    const index = list.findIndex(g => g.key === groupKey);
-    if (index <= 0) {
-      // First sorted group is always unlocked
-      return true;
-    }
-    const prevGroup = list[index - 1];
-    return completedGroups.includes(prevGroup.key);
-  }, [allSortedGroups, completedGroups]);
-
   const filteredUniqueGroups = useMemo(() => {
     if (!groupSearchQuery.trim()) return [];
     const query = groupSearchQuery.toLowerCase().trim();
@@ -636,6 +676,7 @@ export default function HomeWorkspace({
     setIsListening(false);
     setHasListened(false);
     setDismissedSpecialBubble(false);
+    setSpellingFeedback({ type: null, msg: "" });
   }, [currentWordIndex, activeTrainingLevel]);
 
   const uniqueSemestersInModal = useMemo(() => {
@@ -857,7 +898,8 @@ export default function HomeWorkspace({
         setTimeout(() => {
           setSpeechText(currentWord.word);
           setSpeechScore(true);
-          setSpeechStatus("مستواك ممتاز! النطق صحيح ومطابق (محاكاة) ✓");
+          setSpeechStatus("Great job! 🎉 مستواك ممتاز! النطق صحيح ومطابق (محاكاة) ✓");
+          playAudioFeedback(true);
         }, 1200);
         return;
       }
@@ -880,10 +922,12 @@ export default function HomeWorkspace({
           
           if (isSpeechMatched(currentWord.word, transcript)) {
             setSpeechScore(true);
-            setSpeechStatus(`مستواك رائع ومطابق! سمعنا: "${transcript}" ✓`);
+            setSpeechStatus(`Great job! 🎉 مستواك رائع ومطابق! سمعنا: "${transcript}" ✓`);
+            playAudioFeedback(true);
           } else {
             setSpeechScore(false);
-            setSpeechStatus(`لم يتطابق تماماً. لقد سمعنا: "${transcript}". حاول مرة أخرى!`);
+            setSpeechStatus(`Try again! ⚠️ لم يتطابق تماماً. لقد سمعنا: "${transcript}". حاول مرة أخرى!`);
+            playAudioFeedback(false);
           }
         };
 
@@ -955,15 +999,39 @@ export default function HomeWorkspace({
           {/* STEP 2: Write 3 times using a single input field to track progress sequentially */}
           <div className="w-full glass-card p-6 space-y-4 relative overflow-hidden ring-1 ring-pink-100">
             
-            <div className="flex justify-between items-center text-[11px] text-slate-505 font-bold border-b border-pink-100pb-2.5 mb-1">
+            <div className="flex justify-between items-center text-[11px] text-slate-505 font-bold border-b border-pink-100 pb-2.5 mb-1">
               <span className="text-slate-550">اكتب الكلمة بالإنجليزية (3 مرات):</span>
             </div>
 
-            <div className="relative w-full">
+            <div className="relative w-full flex gap-2">
               <input
                 type="text"
                 value={singleInput}
                 disabled={successCount >= 3}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const typing = singleInput.trim().toLowerCase();
+                    const target = currentWord.word.toLowerCase();
+                    if (!typing) return;
+                    if (typing === target) {
+                      setShowTryAgain(false);
+                      setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
+                      playAudioFeedback(true);
+                      setTimeout(() => {
+                        setSuccessCount(prev => {
+                          const next = prev + 1;
+                          return next > 3 ? 3 : next;
+                        });
+                        setSingleInput("");
+                        setSpellingFeedback({ type: null, msg: "" });
+                      }, 1200);
+                    } else {
+                      setShowTryAgain(true);
+                      setSpellingFeedback({ type: "error", msg: "Try again! ⚠️ تهجئة غير صحيحة (حاول مجدداً)" });
+                      playAudioFeedback(false);
+                    }
+                  }
+                }}
                 onChange={(e) => {
                   const val = e.target.value;
                   setSingleInput(val);
@@ -972,25 +1040,33 @@ export default function HomeWorkspace({
                   
                   if (typing === target) {
                     setShowTryAgain(false);
-                    // Wait a fraction of a second to show success, then clear and increment success count
+                    setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
+                    playAudioFeedback(true);
+                    
                     setTimeout(() => {
                       setSuccessCount(prev => {
                         const next = prev + 1;
                         return next > 3 ? 3 : next;
                       });
                       setSingleInput("");
-                    }, 600);
+                      setSpellingFeedback({ type: null, msg: "" });
+                    }, 1200);
                   } else {
                     // Check if this typed text is completely off (not a prefix or doesn't match)
                     if (typing.length > 0 && !target.startsWith(typing)) {
-                      setShowTryAgain(true);
+                      if (!showTryAgain) {
+                        setShowTryAgain(true);
+                        setSpellingFeedback({ type: "error", msg: "Try again! ⚠️ تهجئة غير صحيحة (حاول مجدداً)" });
+                        playAudioFeedback(false);
+                      }
                     } else {
                       setShowTryAgain(false);
+                      setSpellingFeedback({ type: null, msg: "" });
                     }
                   }
                 }}
                 placeholder={successCount >= 3 ? "تمت الكتابة ٣ مرات بنجاح! 🎉" : "اكتب الكلمة بالإنجليزية هنا..."}
-                className={`w-full bg-white/50 text-slate-900 border-2 ${
+                className={`flex-1 bg-white/50 text-slate-900 border-2 ${
                   successCount >= 3 
                     ? "border-emerald-500 bg-emerald-50/10 ring-2 ring-emerald-500/10" 
                     : showTryAgain
@@ -999,11 +1075,46 @@ export default function HomeWorkspace({
                 } rounded-xl px-4 py-3 text-xs font-mono tracking-wide focus:outline-none transition-all text-left placeholder:text-slate-400 font-bold`}
                 dir="ltr"
               />
+
+              {successCount < 3 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const typing = singleInput.trim().toLowerCase();
+                    const target = currentWord.word.toLowerCase();
+                    if (!typing) return;
+                    if (typing === target) {
+                      setShowTryAgain(false);
+                      setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
+                      playAudioFeedback(true);
+                      setTimeout(() => {
+                        setSuccessCount(prev => {
+                          const next = prev + 1;
+                          return next > 3 ? 3 : next;
+                        });
+                        setSingleInput("");
+                        setSpellingFeedback({ type: null, msg: "" });
+                      }, 1200);
+                    } else {
+                      setShowTryAgain(true);
+                      setSpellingFeedback({ type: "error", msg: "Try again! ⚠️ تهجئة غير صحيحة (حاول مجدداً)" });
+                      playAudioFeedback(false);
+                    }
+                  }}
+                  className="px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl text-xs transition-colors cursor-pointer shadow-md shadow-purple-600/10 active:scale-95 shrink-0"
+                >
+                  تحقق
+                </button>
+              )}
             </div>
 
-            {showTryAgain && (
-              <p className="text-xs text-rose-550 font-extrabold text-center mt-1 animate-pulse">
-                ⚠️ حاول مجدداً
+            {spellingFeedback.msg && (
+              <p className={`text-xs font-black text-center mt-2.5 px-3 py-1.5 rounded-xl border animate-fadeIn transition-all ${
+                spellingFeedback.type === "success"
+                  ? "bg-emerald-50 border-emerald-250 text-emerald-700"
+                  : "bg-rose-50 border-rose-250 text-rose-650"
+              }`}>
+                {spellingFeedback.msg}
               </p>
             )}
 
@@ -1189,7 +1300,7 @@ export default function HomeWorkspace({
             <div className="flex items-center gap-3 relative z-10">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1 border border-white/20 shadow-sm shrink-0">
                 <img 
-                  src="https://ais-pre-yr7vuwqju6v52jgcgrdxgx-220375696903.europe-west2.run.app/assets/file_000000007e6c71f4868ae4f798c2c5cc_112808.png" 
+                  src="/stitchLab_Icon_HD.png" 
                   alt="StitchLab Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
@@ -1515,7 +1626,7 @@ export default function HomeWorkspace({
                       const groupKey = `${selectedLevel.number}_${modalSemester}_${val}`;
                       if (!isGroupSequenceUnlocked(groupKey)) {
                         // Request connection test to unlock
-                        handlePwaAction("new_group");
+                        handlePwaAction("new_group", groupKey);
                         setModalGroup("");
                         return;
                       }
@@ -1628,13 +1739,11 @@ export default function HomeWorkspace({
                     <RefreshCw className="w-4 h-4 animate-spin text-purple-500" />
                     <span>جاري استدعاء الإعلان...</span>
                   </div>
-                  {/* Direct simulated iframe container with safe high-performance script format to generate real monetized impressions safely */}
-                  <div className="aspect-[16/9] w-full bg-slate-100 rounded-2xl border border-slate-200 flex items-center justify-center relative overflow-hidden shadow-inner">
-                    <span className="text-[10px] font-mono text-slate-400 font-bold select-none absolute top-2 right-3">Live Ad Unit</span>
-                    <p className="text-[11px] font-bold text-slate-500 text-center px-4 leading-relaxed">
-                      Adsterra Responsive Ad Delivery ⚡️<br/>
-                      <span className="text-[10px] text-purple-500 font-mono">ID: 8cb56a29be1fc670f5e7f1bf25b6028a</span>
-                    </p>
+                  {/* Dynamic partner ad insertion container as requested */}
+                  <div className="p-3 bg-purple-950/5 rounded-2xl border border-purple-500/10 min-h-[120px] flex items-center justify-center relative overflow-hidden shadow-inner">
+                    <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[10px] text-slate-400 font-sans text-center font-bold">
+                      جاري تفعيل إعلان Adsterra...
+                    </div>
                   </div>
                 </div>
               ) : (

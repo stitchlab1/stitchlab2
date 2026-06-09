@@ -237,3 +237,125 @@ export const PRESET_FLASHCARDS: Flashcard[] = [
   }
 ];
 
+/**
+ * Plays immediate interactive audio/vocal feedback.
+ * Includes a synthetic chime or buzzer (for clear responsiveness),
+ * followed by a vocalized "Great job!" or "Try again!" announcement
+ * that uses a distinct voice and accent to differentiate it from native word pronunciations.
+ */
+export const playAudioFeedback = (isCorrect: boolean) => {
+  if (typeof window === "undefined") return;
+
+  // 1. Play synthetic musical chime/buzzer via Web Audio API
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextClass) {
+      const ctx = new AudioContextClass();
+      
+      if (isCorrect) {
+        // High-pitch musical positive chime (C5 then E5)
+        const now = ctx.currentTime;
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        const gain2 = ctx.createGain();
+
+        osc1.type = "sine";
+        osc1.frequency.setValueAtTime(523.25, now); // C5
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.12, now + 0.04);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+
+        osc2.type = "sine";
+        osc2.frequency.setValueAtTime(659.25, now + 0.08); // E5
+        gain2.gain.setValueAtTime(0, now + 0.08);
+        gain2.gain.linearRampToValueAtTime(0.12, now + 0.12);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now + 0.08);
+
+        osc1.stop(now + 0.3);
+        osc2.stop(now + 0.4);
+      } else {
+        // Flat double buzz warning sound (Low flat waves)
+        const now = ctx.currentTime;
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain1 = ctx.createGain();
+        const gain2 = ctx.createGain();
+
+        osc1.type = "sawtooth";
+        osc1.frequency.setValueAtTime(140, now); // Low hum
+        gain1.gain.setValueAtTime(0, now);
+        gain1.gain.linearRampToValueAtTime(0.08, now + 0.03);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+        osc1.connect(gain1);
+        gain1.connect(ctx.destination);
+
+        osc2.type = "sawtooth";
+        osc2.frequency.setValueAtTime(140, now + 0.1);
+        gain2.gain.setValueAtTime(0, now + 0.1);
+        gain2.gain.linearRampToValueAtTime(0.08, now + 0.13);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+
+        osc1.start(now);
+        osc2.start(now + 0.1);
+
+        osc1.stop(now + 0.18);
+        osc2.stop(now + 0.28);
+      }
+    }
+  } catch (err) {
+    console.warn("Web Audio API not supported", err);
+  }
+
+  // 2. Play distinct spoken vocal reinforcement ('Great job!' or 'Try again!')
+  if ("speechSynthesis" in window) {
+    try {
+      window.speechSynthesis.cancel(); // Stop current speaking to play this feedback clearly and immediately
+      
+      const phrase = isCorrect ? "Great job!" : "Try again!";
+      const utterance = new SpeechSynthesisUtterance(phrase);
+      
+      utterance.lang = "en-US"; // Distinct US accent so it doesn't mask British GB learning speech
+      utterance.rate = 1.05; // Slightly fast, cheerful and snappy
+      utterance.pitch = isCorrect ? 1.3 : 0.9; // Dynamic pitch adjustments for emotional reinforcement
+      
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length > 0) {
+        // Filter out US voices to make audio feedback distinct
+        const usVoices = voices.filter(v => 
+          v.lang.toLowerCase().includes("us") || 
+          v.lang.toLowerCase().includes("en-us")
+        );
+        const candidates = usVoices.length > 0 ? usVoices : voices;
+        const matchedVoice = candidates.find(v => 
+          isCorrect 
+            ? v.name.toLowerCase().includes("samantha") || v.name.toLowerCase().includes("google us") || v.name.toLowerCase().includes("female")
+            : v.name.toLowerCase().includes("david") || v.name.toLowerCase().includes("male")
+        ) || candidates[0];
+        
+        if (matchedVoice) {
+          utterance.voice = matchedVoice;
+        }
+      }
+      
+      window.speechSynthesis.speak(utterance);
+    } catch (err) {
+      console.warn("SpeechSynthesis verbal feedback failed to speak", err);
+    }
+  }
+};
+
+

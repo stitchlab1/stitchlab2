@@ -21,7 +21,8 @@ import {
   Flashcard, 
   PRESET_PERSONAS, 
   DAILY_QUOTES, 
-  PRESET_FLASHCARDS 
+  PRESET_FLASHCARDS,
+  playAudioFeedback
 } from "./components/types";
 
 // Import custom workspace sections
@@ -71,6 +72,49 @@ export default function App() {
   const [mainTab, setMainTab] = useState<"home" | "achievements" | "about" | "certificates" | "support">("home");
   const [currentTickTime, setCurrentTickTime] = useState<string>("14:44");
   const [bonusMinutes, setBonusMinutes] = useState<number>(15);
+
+  // Persistent 45 Minutes Daily Timer System for student users
+  const [dailySecondsLeft, setDailySecondsLeft] = useState<number>(() => {
+    if (typeof window === "undefined") return 2700;
+    const today = new Date().toISOString().split("T")[0];
+    const savedDate = localStorage.getItem("stitchlab_timer_date");
+    if (savedDate !== today) {
+      localStorage.setItem("stitchlab_timer_date", today);
+      localStorage.setItem("stitchlab_seconds_left", "2700");
+      localStorage.setItem("stitchlab_extra_ad_claims", "0");
+      return 2700;
+    } else {
+      const savedSecs = localStorage.getItem("stitchlab_seconds_left");
+      return savedSecs !== null ? parseInt(savedSecs, 10) : 2700;
+    }
+  });
+
+  const [extraAdClaimsCount, setExtraAdClaimsCount] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const today = new Date().toISOString().split("T")[0];
+    const savedDate = localStorage.getItem("stitchlab_timer_date");
+    if (savedDate !== today) {
+      return 0;
+    } else {
+      const savedClaims = localStorage.getItem("stitchlab_extra_ad_claims");
+      return savedClaims !== null ? parseInt(savedClaims, 10) : 0;
+    }
+  });
+
+  // List of group keys unlocked via Adsterra ad gating
+  const [unlockedAdvertiserGroups, setUnlockedAdvertiserGroups] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stitchlab_unlocked_ad_groups");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Adsterra states in main App controller
+  const [showExtraAdModal, setShowExtraAdModal] = useState<boolean>(false);
+  const [extraAdLoading, setExtraAdLoading] = useState<boolean>(false);
 
   // Quote state
   const [quoteIndex, setQuoteIndex] = useState<number>(0);
@@ -206,6 +250,80 @@ export default function App() {
       localStorage.setItem("stitchlab_custom_cards", JSON.stringify(customFlashcards));
     }
   }, [customFlashcards]);
+
+  // Timer interval: decrement study time remaining for active logged-in users under StitchLab
+  useEffect(() => {
+    if (!isLoggedIn || showSplash) return;
+    const interval = setInterval(() => {
+      setDailySecondsLeft(prev => {
+        if (prev <= 0) {
+          clearInterval(interval);
+          return 0;
+        }
+        const next = prev - 1;
+        localStorage.setItem("stitchlab_seconds_left", next.toString());
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, showSplash]);
+
+  const formatTime = (secs: number) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  // Inject Adsterra script for dynamic ad loads inside App for claiming extra time
+  useEffect(() => {
+    if (showExtraAdModal && extraAdLoading) {
+      const oldScript = document.getElementById("adsterra-extra-script");
+      if (oldScript) oldScript.remove();
+      
+      const container = document.getElementById("container-65b31b8cd460cca901140c6aee6e1b78");
+      if (container) container.innerHTML = "";
+
+      const script = document.createElement("script");
+      script.id = "adsterra-extra-script";
+      script.async = true;
+      script.setAttribute("data-cfasync", "false");
+      script.src = "https://pl29689018.effectivecpmnetwork.com/65b31b8cd460cca901140c6aee6e1b78/invoke.js";
+      document.head.appendChild(script);
+
+      const timer = setTimeout(() => {
+        setExtraAdLoading(false);
+        setDailySecondsLeft(prev => {
+          const next = prev + (15 * 60); // +15 mins
+          localStorage.setItem("stitchlab_seconds_left", next.toString());
+          return next;
+        });
+        setExtraAdClaimsCount(prev => {
+          const next = Math.min(3, prev + 1);
+          localStorage.setItem("stitchlab_extra_ad_claims", next.toString());
+          return next;
+        });
+      }, 7000); // 7 Seconds load and presentation
+
+      return () => {
+        clearTimeout(timer);
+        const scr = document.getElementById("adsterra-extra-script");
+        if (scr) scr.remove();
+      };
+    }
+  }, [showExtraAdModal, extraAdLoading]);
+
+  const triggerExtraTimeAd = () => {
+    if (!navigator.onLine) {
+      alert("عذراً، يرجى التوصيل بالإنترنت لمشاهدة فيديو الإعلان والحصول على وقت إضافي! 📡");
+      return;
+    }
+    if (extraAdClaimsCount >= 3) {
+      alert("عذراً! لقد استهلكت الحد الأقصى للزيادات المجانية المسموح بها اليوم (3 مرات).");
+      return;
+    }
+    setShowExtraAdModal(true);
+    setExtraAdLoading(true);
+  };
 
   // Auth: handle standard logins
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -561,6 +679,12 @@ export default function App() {
 
       const resData = await response.json();
       setAnalyzerResult(resData);
+      
+      // Increment the analyzed count for achievements tracking
+      try {
+        const curCount = parseInt(localStorage.getItem("stitchlab_analyzed_count") || "0", 10);
+        localStorage.setItem("stitchlab_analyzed_count", (curCount + 1).toString());
+      } catch (err) {}
     } catch (e: any) {
       setAnalyzerError(e.message || "عفواً، فشل الاتصال بمحلل القواعد الاصطناعي.");
     } finally {
@@ -639,6 +763,13 @@ export default function App() {
     const scorePercent = Math.round((correctCount / quizQuestions.length) * 100);
     setQuizScore(prev => Math.max(prev, scorePercent));
     setSubmittedQuiz(true);
+
+    // Play immediate audio check (Great job or Try again) based on target score threshold
+    if (scorePercent >= 70) {
+      playAudioFeedback(true);
+    } else {
+      playAudioFeedback(false);
+    }
   };
 
   // Add custom vocabulary deck Flashcard
@@ -969,206 +1100,335 @@ export default function App() {
         /* 2. LOGGED IN DASHBOARD WORKSPACE */
         <div id="stitchlab-workspace" className="flex flex-col min-h-screen bg-gradient-to-br from-[#FDF2F4] via-white to-[#FAF0FF] text-slate-900 antialiased font-sans relative overflow-hidden">
           
-          {/* Subtle purple and pink decoration elements for responsive luxurious feel */}
-          <div className="absolute top-[-10%] right-[-10%] w-[400px] h-[400px] bg-purple-400/10 rounded-full blur-[110px] pointer-events-none z-0"></div>
-          <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-pink-300/10 rounded-full blur-[110px] pointer-events-none z-0"></div>
+          {dailySecondsLeft <= 0 ? (
+            /* BLOCKED STUDY-TIME SCREEN (DEEP MAUVE BACKROUND & LIME ACCENTS) */
+            <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-[#1F112D] text-center p-6 select-none relative z-50 animate-fadeIn" dir="rtl">
+              {/* Absolutes for glowing premium ambient effects */}
+              <div className="absolute top-[-10%] right-[-10%] w-[350px] h-[350px] bg-[#CDFF00]/5 rounded-full blur-[110px] pointer-events-none"></div>
+              <div className="absolute bottom-[-10%] left-[-10%] w-[350px] h-[350px] bg-[#CDFF00]/5 rounded-full blur-[110px] pointer-events-none"></div>
 
-          <header className="border-b border-pink-100 bg-white/95 backdrop-blur-md sticky top-0 z-40 px-4 md:px-8 py-3.5 shadow-[0_12px_35px_rgba(236,72,153,0.03)] relative z-10">
-            <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-              
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-white border border-pink-100 shadow-sm overflow-hidden p-0.5 flex-shrink-0 select-none">
-                  <img src={appLogo} alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
-                </div>
-                <div>
-                  <h1 className="font-sans font-black text-xl tracking-tight">
-                    <span className="text-purple-600 font-extrabold">Stitch</span>
-                    <span className="text-pink-500 font-black">Lab</span>
-                  </h1>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-700 hidden sm:inline">الطالب: {currentUser?.name || "زائر التجربة"}</span>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="bg-slate-100 hover:bg-slate-250 text-slate-800 py-1.5 px-3 rounded-lg text-xs transition-colors flex items-center gap-1.5 border border-slate-200 cursor-pointer font-bold"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  <span>تسجيل خروج</span>
-                </button>
-              </div>
-
-            </div>
-          </header>
-
-          <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 pb-24">
-            
-            {mainTab === "home" && (
-              <HomeWorkspace
-                unlockedLevel={unlockedLevel}
-                completedLevels={completedLevels}
-                currentTickTime={currentTickTime}
-                bonusMinutes={bonusMinutes}
-                setBonusMinutes={setBonusMinutes}
-                onLevelStart={(level) => {
-                  setSelectedPersona(PRESET_PERSONAS.find(p => p.id === level.personaId) || PRESET_PERSONAS[0]);
-                  setMainTab("support");
-                  setActiveTab("chat");
-                }}
-                onLevelComplete={(lvlNum) => completeLevel(lvlNum)}
-                onResetProgress={resetAllLevelsProgress}
-                LEARNING_LEVELS={LEARNING_LEVELS}
-              />
-            )}
-
-            {mainTab === "achievements" && (
-              <AchievementsWorkspace
-                conversationsHad={conversationsHad}
-                quizScore={quizScore}
-                quizAttempts={quizAttempts}
-                customFlashcardsCount={customFlashcards.length + PRESET_FLASHCARDS.length}
-                unlockedLevel={unlockedLevel}
-                completedLevels={completedLevels}
-                onResetProgress={resetAllLevelsProgress}
-                DAILY_QUOTES={DAILY_QUOTES}
-                quoteIndex={quoteIndex}
-                setQuoteIndex={setQuoteIndex}
-              />
-            )}
-
-            {mainTab === "about" && (
-              <AboutWorkspace />
-            )}
-
-            {mainTab === "certificates" && (
-              <CertificatesWorkspace
-                completedLevels={completedLevels}
-                userName={currentUser?.name || ""}
-                LEARNING_LEVELS={LEARNING_LEVELS}
-              />
-            )}
-
-            {mainTab === "support" && (
-              <div className="max-w-md mx-auto text-center space-y-6 py-8 animate-fadeIn" dir="rtl">
-                <div className="w-20 h-20 bg-gradient-to-tr from-amber-100 to-amber-200 border border-amber-300 text-amber-800 rounded-3xl flex items-center justify-center mx-auto shadow-sm text-3xl">
-                  🤝
+              <div className="max-w-md w-full space-y-8 z-10 relative px-4">
+                <div className="w-24 h-24 bg-[#CDFF00]/10 border border-[#CDFF00]/30 text-[#CDFF00] rounded-full flex items-center justify-center mx-auto text-4xl shadow-[0_0_50px_rgba(205,255,0,0.15)] animate-bounce">
+                  ⏱️
                 </div>
                 
-                <div className="space-y-3 px-4">
-                  <h2 className="text-xl font-black text-amber-950 font-serif">مركز جهود الدعم والمساعدة</h2>
-                  <p className="text-slate-600 text-sm md:text-base leading-relaxed font-bold bg-white/50 p-4 border border-amber-100/50 rounded-2xl shadow-sm">
-                    نحن هنا لمساعدتك. إذا واجهت أي مشكلة أو لديك استفسار، يُرجى التواصل معنا.
-                  </p>
-                </div>
+                {extraAdClaimsCount < 3 ? (
+                  /* EXTRAS OFFER FOR 15 EXTRA MINUTES */
+                  <div className="space-y-6">
+                    <div className="space-y-3">
+                      <h2 className="text-2xl font-black text-[#CDFF00] tracking-tight leading-tight">
+                        انتهى وقتك التعليمي المتاح لليوم!
+                      </h2>
+                      <p className="text-purple-100 text-sm leading-relaxed font-semibold">
+                        لقد أمضيت 45 دقيقة كاملة من التدريب والتأسيس الممتاز اليوم. هل ترغب بمواصلة التعلم؟ شاهد إعلاناً قصيراً لربح <span className="text-[#CDFF00] underline font-extrabold">15 دقيقة إضافية</span> فوراً ومتابعة شغفك! 🎯
+                      </p>
+                      <p className="text-purple-305 text-[11px] font-bold">
+                        المطالبات المتبقية لليوم: {3 - extraAdClaimsCount} من 3
+                      </p>
+                    </div>
 
-                <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-amber-200/40 p-6 shadow-md max-w-sm mx-auto space-y-4">
-                  <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-900 bg-amber-50 px-3 py-1 rounded-full border border-amber-100">
-                    صفحة التواصل الرسمية
-                  </span>
-                  
-                  <a
-                    href="https://www.facebook.com/profile.php?id=61578668730709"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3.5 px-5 rounded-2xl text-xs font-black shadow-md hover:from-blue-700 hover:to-indigo-700 active:scale-95 transition-all w-full cursor-pointer"
-                  >
-                    <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
-                      <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                    </svg>
-                    <span>صفحتنا على فيسبوك</span>
-                  </a>
-                  
-                  <p className="text-[10px] text-amber-950 font-mono select-all bg-amber-50/50 p-2.5 rounded-xl border border-amber-100" dir="ltr">
-                    https://www.facebook.com/profile.php?id=61578668730709
-                  </p>
-                </div>
+                    {showExtraAdModal ? (
+                      <div className="space-y-4 bg-[#2E1E38]/95 backdrop-blur-md rounded-3xl border border-purple-500/30 p-5 shadow-2x">
+                        <h4 className="text-xs font-black text-purple-200">
+                          {extraAdLoading ? "جاري تحميل إعلان الشركاء Adsterra..." : "✓ تم الإكمال وشحن الوقت بنجاح!"}
+                        </h4>
+                        
+                        {extraAdLoading ? (
+                          <div className="space-y-4">
+                            <div className="flex items-center justify-center gap-2 text-xs font-black text-[#CDFF00]">
+                              <span className="animate-spin text-lg">⚙️</span>
+                              <span>الرجاء المشاهدة لمدة 7 ثوانٍ لربح الـ 15 دقيقة...</span>
+                            </div>
+                            
+                            {/* Dynamic Adsterra container */}
+                            <div className="w-full min-h-[160px] flex flex-col justify-center items-center bg-[#150a1b]/95 border border-purple-500/25 rounded-2xl p-4 overflow-hidden shadow-inner relative">
+                              <span className="text-[10px] font-mono text-purple-400 absolute top-2 right-2">Ad Unit</span>
+                              <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[11px] text-slate-300 text-center font-bold">
+                                جاري استدعاء الإعلان...
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-4 bg-[#CDFF00]/10 border border-[#CDFF00]/30 rounded-2xl text-center space-y-2">
+                            <p className="text-xs font-black text-[#CDFF00]">مبارك! تمت إضافة 15 دقيقة بنجاح 🎉</p>
+                            <p className="text-[11px] text-slate-300">أصبح لديك الآن وقت إضافي للمتابعة فوراً.</p>
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          disabled={extraAdLoading}
+                          onClick={() => {
+                            setShowExtraAdModal(false);
+                          }}
+                          className={`w-full py-3.5 rounded-2xl text-xs font-black transition-all ${
+                            extraAdLoading 
+                              ? "bg-purple-950 text-slate-600 border border-purple-900 cursor-not-allowed"
+                              : "bg-[#CDFF00] hover:bg-[#d4ff1a] text-slate-950 font-black focus:outline-none shadow-md shadow-[#CDFF00]/10 active:scale-95 cursor-pointer"
+                          }`}
+                        >
+                          {extraAdLoading ? "انتظر لثوانٍ..." : "بدء التصفح والمتابعة 🚀"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        <button
+                          type="button"
+                          onClick={triggerExtraTimeAd}
+                          className="w-full max-w-sm mx-auto py-4 px-6 bg-[#CDFF00] hover:bg-[#d6ff1a] text-purple-950 rounded-2xl text-xs font-black transition-all shadow-lg active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+                        >
+                          <span>شاهد إعلاناً للحصول على 15 دقيقة إضافية</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="text-xs font-bold text-pink-400 hover:text-pink-500 transition-colors underline bg-transparent border-0 cursor-pointer"
+                        >
+                          تسجيل الخروج والعودة لاحقاً
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* FAREWELL SCREEN FOR 90m ACCESS EXCLUSION (LIME ON DARK MAUVE) */
+                  <div className="space-y-6">
+                    <h2 className="text-4xl font-extrabold text-[#CDFF00] font-sans leading-tight tracking-wide drop-shadow-[0_4px_12px_rgba(205,255,0,0.15)] animate-pulse">
+                      عمل رائع، أحسنت عد غدا!
+                    </h2>
+                    <p className="text-purple-200 text-sm leading-relaxed max-w-sm mx-auto font-medium">
+                      لقد أنجزت كامل التدريب اليومي الأقصى (90 دقيقة). مستواك يتطور وعقلك ممتن لاهتمامك. نراك غداً لتحدي جديد! 🌟
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="inline-block px-8 py-3.5 bg-[#CDFF00] hover:bg-[#d4ff1a] text-slate-950 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer active:scale-95"
+                    >
+                      خروج من الحساب
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-
-          </main>
-
-          <nav className="fixed bottom-4 left-4 right-4 bg-white/95 backdrop-blur-xl border border-pink-100 py-2.5 px-4 shadow-xl rounded-2xl z-40 max-w-lg mx-auto">
-            <div className="flex items-center justify-between gap-1 select-none" dir="rtl">
-              
-              <button
-                type="button"
-                onClick={() => setMainTab("home")}
-                className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                  mainTab === "home" 
-                    ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                }`}
-              >
-                <div className="transition-transform duration-300 group-hover:scale-110">
-                  <BookOpen className="w-4.5 h-4.5" />
-                </div>
-                <span className="text-[10px] font-bold">الرئيسية</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMainTab("achievements")}
-                className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                  mainTab === "achievements" 
-                    ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                }`}
-              >
-                <div>
-                  <Trophy className="w-4.5 h-4.5" />
-                </div>
-                <span className="text-[10px] font-bold">الإنجازات</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMainTab("about")}
-                className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                  mainTab === "about" 
-                    ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                    : "text-slate-500 hover:text-slate-850 hover:bg-slate-100"
-                }`}
-              >
-                <div>
-                  <Compass className="w-4.5 h-4.5" />
-                </div>
-                <span className="text-[10px] font-bold">من نحن</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMainTab("certificates")}
-                className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                  mainTab === "certificates" 
-                    ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                }`}
-              >
-                <div>
-                  <Award className="w-4.5 h-4.5" />
-                </div>
-                <span className="text-[10px] font-bold">شهاداتنا</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setMainTab("support")}
-                className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                  mainTab === "support" 
-                    ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                }`}
-              >
-                <div>
-                  <HelpCircle className="w-4.5 h-4.5" />
-                </div>
-                <span className="text-[10px] font-bold">الدعم</span>
-              </button>
-
             </div>
-          </nav>
+          ) : (
+            /* REGULAR STUDY INTERACTIVE DASHBOARD VIEW */
+            <>
+              <header className="border-b border-pink-100 bg-white/95 backdrop-blur-md sticky top-0 z-40 px-4 md:px-8 py-3.5 shadow-[0_12px_35px_rgba(236,72,153,0.03)] relative z-10">
+                <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+                  
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-10 h-10 rounded-xl bg-white border border-pink-100 shadow-sm overflow-hidden p-0.5 flex-shrink-0 select-none">
+                      <img src={appLogo} alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                    </div>
+                    <div>
+                      <h1 className="font-sans font-black text-xl tracking-tight">
+                        <span className="text-purple-600 font-extrabold">Stitch</span>
+                        <span className="text-pink-500 font-black">Lab</span>
+                      </h1>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {/* Visual Study Timer Badge */}
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 border border-purple-150/50 rounded-xl shadow-inner select-none">
+                      <span className="text-[12px] animate-pulse">⏱️</span>
+                      <span className="text-xs font-black text-purple-950 font-mono" dir="ltr">
+                        {formatTime(dailySecondsLeft)}
+                      </span>
+                      <span className="text-[10px] text-purple-700 font-bold hidden xs:inline">متبقي</span>
+                    </div>
+
+                    <span className="text-xs font-bold text-slate-700 hidden sm:inline">الطالب: {currentUser?.name || "زائر التجربة"}</span>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="bg-slate-100 hover:bg-slate-250 text-slate-800 py-1.5 px-3 rounded-lg text-xs transition-colors flex items-center gap-1.5 border border-slate-200 cursor-pointer font-bold"
+                    >
+                      <LogOut className="w-3.5 h-3.5" />
+                      <span>تسجيل خروج</span>
+                    </button>
+                  </div>
+
+                </div>
+              </header>
+
+              <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 pb-24 z-10">
+                
+                {mainTab === "home" && (
+                  <HomeWorkspace
+                    unlockedLevel={unlockedLevel}
+                    completedLevels={completedLevels}
+                    currentTickTime={currentTickTime}
+                    bonusMinutes={bonusMinutes}
+                    setBonusMinutes={setBonusMinutes}
+                    dailySecondsLeft={dailySecondsLeft}
+                    extraAdClaimsCount={extraAdClaimsCount}
+                    unlockedAdvertiserGroups={unlockedAdvertiserGroups}
+                    onUnlockGroup={(gKey) => {
+                      const nextGroups = [...unlockedAdvertiserGroups, gKey];
+                      setUnlockedAdvertiserGroups(nextGroups);
+                      try {
+                        localStorage.setItem("stitchlab_unlocked_ad_groups", JSON.stringify(nextGroups));
+                      } catch (e) {}
+                    }}
+                    onLevelStart={(level) => {
+                      setSelectedPersona(PRESET_PERSONAS.find(p => p.id === level.personaId) || PRESET_PERSONAS[0]);
+                      setMainTab("support");
+                      setActiveTab("chat");
+                    }}
+                    onLevelComplete={(lvlNum) => completeLevel(lvlNum)}
+                    onResetProgress={resetAllLevelsProgress}
+                    LEARNING_LEVELS={LEARNING_LEVELS}
+                  />
+                )}
+
+                {mainTab === "achievements" && (
+                  <AchievementsWorkspace
+                    conversationsHad={conversationsHad}
+                    quizScore={quizScore}
+                    quizAttempts={quizAttempts}
+                    customFlashcardsCount={customFlashcards.length + PRESET_FLASHCARDS.length}
+                    unlockedLevel={unlockedLevel}
+                    completedLevels={completedLevels}
+                    onResetProgress={resetAllLevelsProgress}
+                    DAILY_QUOTES={DAILY_QUOTES}
+                    quoteIndex={quoteIndex}
+                    setQuoteIndex={setQuoteIndex}
+                  />
+                )}
+
+                {mainTab === "about" && (
+                  <AboutWorkspace />
+                )}
+
+                {mainTab === "certificates" && (
+                  <CertificatesWorkspace
+                    completedLevels={completedLevels}
+                    userName={currentUser?.name || ""}
+                    LEARNING_LEVELS={LEARNING_LEVELS}
+                  />
+                )}
+
+                {mainTab === "support" && (
+                  <div className="max-w-md mx-auto text-center space-y-6 py-8 animate-fadeIn" dir="rtl">
+                    <div className="w-20 h-20 bg-gradient-to-tr from-amber-100 to-amber-200 border border-amber-300 text-amber-800 rounded-3xl flex items-center justify-center mx-auto shadow-sm text-3xl">
+                      🤝
+                    </div>
+                    
+                    <div className="space-y-3 px-4">
+                      <h2 className="text-xl font-black text-amber-950 font-serif">مركز جهود الدعم والمساعدة</h2>
+                      <p className="text-slate-600 text-sm md:text-base leading-relaxed font-bold bg-white/50 p-4 border border-amber-100/50 rounded-2xl shadow-sm">
+                        نحن هنا لمساعدتك. إذا واجهت أي مشكلة أو لديك استفسار، يُرجى التواصل معنا.
+                      </p>
+                    </div>
+
+                    <div className="bg-white/80 backdrop-blur-md rounded-3xl border border-amber-200/40 p-6 shadow-md max-w-sm mx-auto space-y-4">
+                      <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-900 bg-amber-50 px-3 py-1 rounded-full border border-amber-100">
+                        صفحة التواصل الرسمية
+                      </span>
+                      
+                      <a
+                        href="https://www.facebook.com/profile.php?id=61578668730709"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3.5 px-5 rounded-2xl text-xs font-black shadow-md hover:from-blue-700 hover:to-indigo-700 active:scale-95 transition-all w-full cursor-pointer"
+                      >
+                        <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">
+                          <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                        </svg>
+                        <span>صفحتنا على فيسبوك</span>
+                      </a>
+                      
+                      <p className="text-[10px] text-amber-950 font-mono select-all bg-amber-50/50 p-2.5 rounded-xl border border-amber-100" dir="ltr">
+                        https://www.facebook.com/profile.php?id=61578668730709
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+              </main>
+
+              <nav className="fixed bottom-4 left-4 right-4 bg-white/95 backdrop-blur-xl border border-pink-100 py-2.5 px-4 shadow-xl rounded-2xl z-40 max-w-lg mx-auto">
+                <div className="flex items-center justify-between gap-1 select-none" dir="rtl">
+                  
+                  <button
+                    type="button"
+                    onClick={() => setMainTab("home")}
+                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                      mainTab === "home" 
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div className="transition-transform duration-300 group-hover:scale-110">
+                      <BookOpen className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="text-[10px] font-bold">الرئيسية</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMainTab("achievements")}
+                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                      mainTab === "achievements" 
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div>
+                      <Trophy className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="text-[10px] font-bold">الإنجازات</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMainTab("about")}
+                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                      mainTab === "about" 
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-850 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div>
+                      <Compass className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="text-[10px] font-bold">من نحن</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMainTab("certificates")}
+                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                      mainTab === "certificates" 
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div>
+                      <Award className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="text-[10px] font-bold">شهاداتنا</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMainTab("support")}
+                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                      mainTab === "support" 
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div>
+                      <HelpCircle className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="text-[10px] font-bold">الدعم</span>
+                  </button>
+
+                </div>
+              </nav>
+            </>
+          )}
 
         </div>
       )}
