@@ -28,6 +28,7 @@ import {
 // Import custom workspace sections
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 import HomeWorkspace from "./components/HomeWorkspace";
+import AdsterraBanner from "./components/AdsterraBanner";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
 import CertificatesWorkspace from "./components/CertificatesWorkspace";
@@ -277,31 +278,9 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  // Inject Adsterra script for dynamic ad loads inside App for claiming extra time
+  // Manage Adsterra script timeout loading for claiming extra time
   useEffect(() => {
     if (showExtraAdModal && extraAdLoading) {
-      const oldScript = document.getElementById("adsterra-extra-script");
-      if (oldScript) oldScript.remove();
-      
-      const container = document.getElementById("container-65b31b8cd460cca901140c6aee6e1b78");
-      if (container) container.innerHTML = "";
-
-      // Configure atOptions for stable iframe placement & dimensions
-      (window as any).atOptions = {
-        key: '65b31b8cd460cca901140c6aee6e1b78',
-        format: 'iframe',
-        height: 250,
-        width: 300,
-        params: {}
-      };
-
-      const script = document.createElement("script");
-      script.id = "adsterra-extra-script";
-      script.async = true;
-      script.setAttribute("data-cfasync", "false");
-      script.src = "https://pl29689018.effectivecpmnetwork.com/65b31b8cd460cca901140c6aee6e1b78/invoke.js";
-      document.head.appendChild(script);
-
       const timer = setTimeout(() => {
         setExtraAdLoading(false);
         setDailySecondsLeft(prev => {
@@ -318,8 +297,6 @@ export default function App() {
 
       return () => {
         clearTimeout(timer);
-        const scr = document.getElementById("adsterra-extra-script");
-        if (scr) scr.remove();
       };
     }
   }, [showExtraAdModal, extraAdLoading]);
@@ -1254,11 +1231,11 @@ export default function App() {
                             </div>
                           )}
 
-                          {/* Dynamic Adsterra container (kept mounted to prevent unmount flickering) */}
-                          <div className="w-full min-h-[165px] flex flex-col justify-center items-center bg-[#150a1b]/95 border border-purple-500/25 rounded-2xl p-4 overflow-hidden shadow-inner relative">
+                          {/* Dynamic Adsterra container - rendered using the stable AdsterraBanner component to prevent flickering or disappearing */}
+                          <div className="w-full flex flex-col justify-center items-center bg-[#150a1b]/95 border border-purple-500/25 rounded-2xl p-2 overflow-hidden shadow-inner relative">
                             <span className="text-[10px] font-mono text-purple-400 absolute top-2 right-2">Ad Unit</span>
-                            <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[11px] text-slate-300 text-center font-bold">
-                              جاري استدعاء الإعلان...
+                            <div className="w-full mt-4">
+                              <AdsterraBanner />
                             </div>
                           </div>
                         </div>

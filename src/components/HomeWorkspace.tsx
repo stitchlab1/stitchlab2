@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
+import { AdsterraBanner } from "./AdsterraBanner";
 
 
 interface LearningLevel {
@@ -561,31 +562,9 @@ export default function HomeWorkspace({
     });
   };
 
-  // Inject real Adsterra script tag and invoke container integration dynamically on modal open
+  // Handle timer simulation for Adsterra rewards credit inside HomeWorkspace
   useEffect(() => {
     if (adsterraModal.open && adsterraModal.loading) {
-      const oldScript = document.getElementById("adsterra-dynamic-invoke");
-      if (oldScript) oldScript.remove();
-
-      const container = document.getElementById("container-65b31b8cd460cca901140c6aee6e1b78");
-      if (container) container.innerHTML = "";
-
-      // Configure atOptions globally for stable frame dimensions inside HomeWorkspace
-      (window as any).atOptions = {
-        key: '65b31b8cd460cca901140c6aee6e1b78',
-        format: 'iframe',
-        height: 250,
-        width: 300,
-        params: {}
-      };
-
-      const script = document.createElement("script");
-      script.id = "adsterra-dynamic-invoke";
-      script.async = true;
-      script.setAttribute("data-cfasync", "false");
-      script.src = "https://pl29689018.effectivecpmnetwork.com/65b31b8cd460cca901140c6aee6e1b78/invoke.js";
-      document.head.appendChild(script);
-
       // Finish watch process after a brief wait of 7 seconds to award credit
       const timer = setTimeout(() => {
         setAdsterraModal(prev => ({
@@ -610,8 +589,6 @@ export default function HomeWorkspace({
 
       return () => {
         clearTimeout(timer);
-        const scr = document.getElementById("adsterra-dynamic-invoke");
-        if (scr) scr.remove();
       };
     }
   }, [adsterraModal.open, adsterraModal.loading, pendingUnlockGroupKey, allSortedGroups, onUnlockGroup]);
@@ -1758,10 +1735,10 @@ export default function HomeWorkspace({
                   </div>
                 )}
 
-                {/* Dynamic partner ad insertion container - kept persistently mounted to avoid unmounting flicker */}
-                <div className="p-3 bg-purple-950/5 rounded-2xl border border-purple-500/10 min-h-[120px] flex items-center justify-center relative overflow-hidden shadow-innerScale">
-                  <div id="container-65b31b8cd460cca901140c6aee6e1b78" className="text-[10px] text-slate-400 font-sans text-center font-bold">
-                    جاري تفعيل إعلان Adsterra...
+                {/* Dynamic partner ad insertion container - rendered using stable AdsterraBanner component to prevent unmounting flicker */}
+                <div className="p-3 bg-purple-950/5 rounded-2xl border border-purple-500/10 flex items-center justify-center relative overflow-hidden">
+                  <div className="w-full mt-2">
+                    <AdsterraBanner />
                   </div>
                 </div>
               </div>
