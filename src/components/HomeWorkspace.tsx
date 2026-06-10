@@ -1275,54 +1275,6 @@ export default function HomeWorkspace({
         </div>
       )}
 
-      {/* SMART INTERNET AND ADSTERRA ADVERTISING MANAGEMENT CENTER */}
-      <div className="max-w-md mx-auto mb-6 px-3" dir="rtl">
-        <div className="bg-white rounded-3xl p-5 border border-purple-100/80 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📡</span>
-              <div>
-                <h4 className="text-xs font-black text-slate-800">نظام إدارة الاتصال الذكي</h4>
-                <p className="text-[10px] text-slate-450 font-bold">بوابتك للتعلم والجوائز بدون حدود</p>
-              </div>
-            </div>
-            {/* Live Interactive Online status badge */}
-            <div className={`px-3 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1.5 transition-all border ${
-              isOnline 
-                ? "bg-emerald-50 border-emerald-150 text-emerald-600" 
-                : "bg-rose-50 border-rose-150 text-rose-500 animate-pulse"
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
-              <span>{isOnline ? "متصل بالإنترنت" : "يعمل بدون اتصال (Offline)"}</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* Extra Time bonus trigger button */}
-            <button
-              type="button"
-              onClick={() => handlePwaAction("extra_time")}
-              className="py-3 px-4 bg-purple-50 hover:bg-purple-100/80 text-purple-700 border border-purple-150/45 rounded-2xl flex flex-col items-center justify-center text-center gap-1 transition-all active:scale-95 cursor-pointer hover:shadow-sm"
-            >
-              <span className="text-lg">⏱️</span>
-              <span className="text-xs font-black">طلب وقت إضافي</span>
-              <span className="text-[9px] text-slate-400 font-bold">(إضافة +15 دقيقة)</span>
-            </button>
-
-            {/* New Group target unlock trigger button */}
-            <button
-              type="button"
-              onClick={() => handlePwaAction("new_group")}
-              className="py-3 px-4 bg-pink-50/50 hover:bg-pink-100 text-pink-800 border border-pink-200/40 rounded-2xl flex flex-col items-center justify-center text-center gap-1 transition-all active:scale-95 cursor-pointer hover:shadow-sm"
-            >
-              <span className="text-lg">🔓</span>
-              <span className="text-xs font-black">فتح مجموعة جديدة</span>
-              <span className="text-[9px] text-slate-400 font-bold">(فيديو Adsterra سريع)</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* Main Road Map Tablet Frame with elegant modern sapphire blue & white styling and clean borders */}
       <div className="bg-white rounded-[36px] shadow-[0_25px_60px_rgba(236,72,153,0.06),0_1px_3px_rgba(0,0,0,0.02)] border border-pink-100/40 p-6 max-w-md mx-auto relative overflow-hidden">
         
@@ -1426,6 +1378,9 @@ export default function HomeWorkspace({
           })}
         </div>
       </div>
+
+      {/* Spacer to prevent overlap of content under the fixed ad banner */}
+      <div className="h-[135px] w-full pointer-events-none" />
 
       {/* GOOGLE SHEETS CONFIG MODAL */}
       {showConfig && (
@@ -1646,6 +1601,50 @@ export default function HomeWorkspace({
       )}
 
       {/* ADSTERRA ADVERTISER OVERLAY */}
+
+      {/* SMART INTERNET AND ADSTERRA ADVERTISING MANAGEMENT CENTER - FIXED/STICKY BOTTOM BAR */}
+      <div className="fixed bottom-20 left-0 right-0 z-30 px-3 w-full max-w-md mx-auto" dir="rtl">
+        <div className="bg-white/95 backdrop-blur-md rounded-2xl p-3.5 border border-purple-100 shadow-[0_-10px_35px_rgba(236,72,153,0.08),0_4px_12px_rgba(0,0,0,0.03)] space-y-2.5 text-right transition-all hover:border-purple-200">
+          <div className="flex items-center justify-between gap-2 select-none">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📡</span>
+              <div>
+                <h4 className="text-[11px] font-black text-slate-850">نظام إدارة الاتصال والجوائز</h4>
+              </div>
+            </div>
+            
+            {/* Live Interactive Online status badge */}
+            <div className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold flex items-center gap-1 transition-all border ${
+              isOnline 
+                ? "bg-emerald-50 border-emerald-150 text-emerald-600" 
+                : "bg-rose-50 border-rose-150 text-rose-500 animate-pulse"
+            }`}>
+              <span className={`w-1 h-1 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
+              <span>{isOnline ? "متصل" : "بدون اتصال"}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {/* Extra Time bonus trigger button */}
+            <button
+              type="button"
+              onClick={() => handlePwaAction("extra_time")}
+              className="py-1.5 px-2 bg-gradient-to-r from-purple-50 to-purple-100/50 hover:from-purple-100 hover:to-purple-150/40 text-purple-750 border border-purple-150/45 rounded-xl flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer text-[10.5px] font-black shadow-sm"
+            >
+              <span>⏱️ طلب وقت إضافي (+15 د)</span>
+            </button>
+
+            {/* New Group target unlock trigger button */}
+            <button
+              type="button"
+              onClick={() => handlePwaAction("new_group")}
+              className="py-1.5 px-2 bg-gradient-to-r from-pink-50 to-pink-100/50 hover:from-pink-100 hover:to-pink-150/40 text-pink-850 border border-pink-200/40 rounded-xl flex items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer text-[10.5px] font-black shadow-sm"
+            >
+              <span>🔓 فتح مجموعة بالكامل</span>
+            </button>
+          </div>
+        </div>
+      </div>
 
     </div>
   );
