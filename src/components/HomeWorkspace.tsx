@@ -1240,7 +1240,7 @@ export default function HomeWorkspace({
             <div className="flex items-center gap-3 relative z-10">
               <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center p-1 border border-white/20 shadow-sm shrink-0">
                 <img 
-                  src="/logo.png" 
+                  src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/d50e6c29754ea11612492e06c68b3513b20af0f5/file_00000000350071f4a16cedee12520267~3.png" 
                   alt="StitchLab Logo" 
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
