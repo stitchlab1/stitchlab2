@@ -1193,73 +1193,8 @@ export default function App() {
         /* 2. LOGGED IN DASHBOARD WORKSPACE */
         <div id="stitchlab-workspace" className="flex flex-col min-h-screen bg-gradient-to-br from-[#FDF2F4] via-white to-[#FAF0FF] text-slate-900 antialiased font-sans relative overflow-hidden">
           
-          {dailySecondsLeft <= 0 ? (
-            /* BLOCKED STUDY-TIME SCREEN (DEEP MAUVE BACKROUND & LIME ACCENTS) */
-            <div className="flex-1 flex flex-col items-center justify-center min-h-screen bg-[#1F112D] text-center p-6 select-none relative z-50 animate-fadeIn" dir="rtl">
-              {/* Absolutes for glowing premium ambient effects */}
-              <div className="absolute top-[-10%] right-[-10%] w-[350px] h-[350px] bg-[#CDFF00]/5 rounded-full blur-[110px] pointer-events-none"></div>
-              <div className="absolute bottom-[-10%] left-[-10%] w-[350px] h-[350px] bg-[#CDFF00]/5 rounded-full blur-[110px] pointer-events-none"></div>
-
-              <div className="max-w-md w-full space-y-8 z-10 relative px-4">
-                <div className="w-24 h-24 bg-[#CDFF00]/10 border border-[#CDFF00]/30 text-[#CDFF00] rounded-full flex items-center justify-center mx-auto text-4xl shadow-[0_0_50px_rgba(205,255,0,0.15)] animate-bounce">
-                  ⏱️
-                </div>
-                
-                {extraAdClaimsCount < 3 ? (
-                  /* EXTRAS OFFER FOR 15 EXTRA MINUTES */
-                  <div className="space-y-6">
-                    <div className="space-y-3">
-                      <h2 className="text-2xl font-black text-[#CDFF00] tracking-tight leading-tight">
-                        انتهى وقتك التعليمي المتاح لليوم!
-                      </h2>
-                      <p className="text-purple-100 text-sm leading-relaxed font-semibold">
-                        لقد أمضيت 45 دقيقة كاملة من التدريب والتأسيس الممتاز اليوم. هل ترغب بمواصلة التعلم؟ شاهد إعلاناً قصيراً لربح <span className="text-[#CDFF00] underline font-extrabold">15 دقيقة إضافية</span> فوراً ومتابعة شغفك! 🎯
-                      </p>
-                      <p className="text-purple-305 text-[11px] font-bold">
-                        المطالبات المتبقية لليوم: {3 - extraAdClaimsCount} من 3
-                      </p>
-                    </div>
-
-                      <div className="flex flex-col gap-3">
-                        <button
-                          type="button"
-                          onClick={triggerExtraTimeAd}
-                          className="w-full max-w-sm mx-auto py-4 px-6 bg-[#CDFF00] hover:bg-[#d6ff1a] text-purple-950 rounded-2xl text-xs font-black transition-all shadow-lg active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-                        >
-                          <span>الحصول على 15 دقيقة إضافية مجاناً</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleLogout}
-                          className="text-xs font-bold text-pink-400 hover:text-pink-500 transition-colors underline bg-transparent border-0 cursor-pointer"
-                        >
-                          تسجيل الخروج والعودة لاحقاً
-                        </button>
-                      </div>
-                  </div>
-                ) : (
-                  /* FAREWELL SCREEN FOR 90m ACCESS EXCLUSION (LIME ON DARK MAUVE) */
-                  <div className="space-y-6">
-                    <h2 className="text-4xl font-extrabold text-[#CDFF00] font-sans leading-tight tracking-wide drop-shadow-[0_4px_12px_rgba(205,255,0,0.15)] animate-pulse">
-                      عمل رائع، أحسنت عد غدا!
-                    </h2>
-                    <p className="text-purple-200 text-sm leading-relaxed max-w-sm mx-auto font-medium">
-                      لقد أنجزت كامل التدريب اليومي الأقصى (90 دقيقة). مستواك يتطور وعقلك ممتن لاهتمامك. نراك غداً لتحدي جديد! 🌟
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="inline-block px-8 py-3.5 bg-[#CDFF00] hover:bg-[#d4ff1a] text-slate-950 text-xs font-black rounded-xl transition-all shadow-md cursor-pointer active:scale-95"
-                    >
-                      خروج من الحساب
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-            /* REGULAR STUDY INTERACTIVE DASHBOARD VIEW */
-            <>
+          {/* REGULAR STUDY INTERACTIVE DASHBOARD VIEW */}
+          <>
               <header className="border-b border-pink-100 bg-white/95 backdrop-blur-md sticky top-0 z-40 px-4 md:px-8 py-3.5 shadow-[0_12px_35px_rgba(236,72,153,0.03)] relative z-10">
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
                   
@@ -1479,7 +1414,6 @@ export default function App() {
               {/* Educational Learning Stopwatch Timer */}
               <LearningTimer />
             </>
-          )}
 
         </div>
       )}
