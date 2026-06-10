@@ -23,7 +23,8 @@ import {
   PRESET_PERSONAS, 
   DAILY_QUOTES, 
   PRESET_FLASHCARDS,
-  playAudioFeedback
+  playAudioFeedback,
+  playButtonClickSound
 } from "./components/types";
 
 // Import custom workspace sections
@@ -32,6 +33,7 @@ import HomeWorkspace from "./components/HomeWorkspace";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
 import CertificatesWorkspace from "./components/CertificatesWorkspace";
+import LearningTimer from "./components/LearningTimer";
 
 // Import newly refactored dynamic panels
 import ChatPanel from "./components/ChatPanel";
@@ -47,6 +49,32 @@ import welcomeRabbit from "./assets/1000000038.webp";
 export default function App() {
   // Splash Screen State
   const [showSplash, setShowSplash] = useState<boolean>(true);
+
+  // Global Sound Click Listener for buttons and interactive items
+  useEffect(() => {
+    const handleGlobalClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target) return;
+
+      const clickable = target.closest("button, [role='button'], a, input[type='submit'], input[type='button'], .cursor-pointer, [id*='level-card']");
+      if (clickable) {
+        // Only ignore if clicking nested select elements or textual input boxes to avoid typing sounds.
+        const tagName = target.tagName.toLowerCase();
+        if (tagName === "input" && (target as HTMLInputElement).type !== "button" && (target as HTMLInputElement).type !== "submit") {
+          return;
+        }
+        if (tagName === "textarea" || tagName === "select") {
+          return;
+        }
+        playButtonClickSound();
+      }
+    };
+
+    document.addEventListener("click", handleGlobalClick, { capture: true });
+    return () => {
+      document.removeEventListener("click", handleGlobalClick, { capture: true });
+    };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -1272,7 +1300,7 @@ export default function App() {
                 </div>
               </header>
 
-              <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 pb-24 z-10">
+              <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 pb-36 z-10">
                 
                 {mainTab === "home" && (
                   <HomeWorkspace
@@ -1368,8 +1396,8 @@ export default function App() {
 
               </main>
 
-              <nav className="fixed bottom-4 left-4 right-4 bg-white/95 backdrop-blur-xl border border-pink-100 py-2.5 px-4 shadow-xl rounded-2xl z-40 max-w-lg mx-auto">
-                <div className="flex items-center justify-between gap-1 select-none" dir="rtl">
+              <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-pink-100 py-3.5 px-6 shadow-[0_-8px_30px_rgba(236,72,153,0.06)] z-40 w-full">
+                <div className="max-w-xl mx-auto flex items-center justify-between gap-1 select-none" dir="rtl">
                   
                   <button
                     type="button"
@@ -1448,6 +1476,9 @@ export default function App() {
 
                 </div>
               </nav>
+              
+              {/* Educational Learning Stopwatch Timer */}
+              <LearningTimer />
             </>
           )}
 

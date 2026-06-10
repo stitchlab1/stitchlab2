@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
+import staticSheetWords from "../data/staticSheetWords.json";
 
 
 interface LearningLevel {
@@ -374,7 +375,7 @@ export default function HomeWorkspace({
         return JSON.parse(saved);
       } catch (e) {}
     }
-    return DEFAULT_SHEET_WORDS;
+    return (staticSheetWords && staticSheetWords.length > 0) ? (staticSheetWords as SheetWord[]) : DEFAULT_SHEET_WORDS;
   });
 
   const [selectedLevel, setSelectedLevel] = useState<LearningLevel | null>(null);
@@ -686,23 +687,9 @@ export default function HomeWorkspace({
   const [selectedGroup, setSelectedGroup] = useState<string>("All");
 
   useEffect(() => {
-    const autoSync = async () => {
-      setSyncLoading(true);
-      try {
-        const link = localStorage.getItem("stitchlab_sheet_link") || "https://docs.google.com/spreadsheets/d/1BtCUNuf34uVEaQS_hPbINw0-ogACWzyKsN426QftNwI/edit?usp=drivesdk";
-        const parsed = await parseGoogleSheet(link);
-        setSheetWords(parsed);
-        localStorage.setItem("stitchlab_sheet_words", JSON.stringify(parsed));
-        localStorage.setItem("stitchlab_sheet_synced_dirkt_v3", "true");
-        setSyncSuccess(true);
-        setTimeout(() => setSyncSuccess(false), 3000);
-      } catch (err: any) {
-        console.error("Auto-sync error on mount:", err);
-      } finally {
-        setSyncLoading(false);
-      }
-    };
-    autoSync();
+    // With Static Site Generation (SSG), we do not automatically fetch on client-side mount.
+    // The data is pre-compiled at build-time, which guarantees instant loading and saves API quota.
+    // The user can still trigger manual fetching at any time via the "Sync" settings button.
   }, []);
 
   const uniqueSemesters = useMemo(() => {
@@ -761,7 +748,7 @@ export default function HomeWorkspace({
   };
 
   const handleLoadDemoSheet = () => {
-    setSheetWords(DEFAULT_SHEET_WORDS);
+    setSheetWords((staticSheetWords && staticSheetWords.length > 0) ? (staticSheetWords as SheetWord[]) : DEFAULT_SHEET_WORDS);
     localStorage.removeItem("stitchlab_sheet_words");
     localStorage.removeItem("stitchlab_sheet_link");
     setSheetLinkInput("");

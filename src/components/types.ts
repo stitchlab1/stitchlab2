@@ -358,4 +358,37 @@ export const playAudioFeedback = (isCorrect: boolean) => {
   }
 };
 
+/**
+ * Plays a quick, subtle, elegant digital click/pop sound when interactive buttons or components are clicked.
+ */
+export const playButtonClickSound = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (AudioContextClass) {
+      const ctx = new AudioContextClass();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(600, now); // Sweet crisp pop
+      osc.frequency.exponentialRampToValueAtTime(180, now + 0.08); // downward pitch drop
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.05, now + 0.005); // soft warm attack
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.06); // fast decay
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.07);
+    }
+  } catch (err) {
+    // Fail silently so as not to interrupt app flow
+  }
+};
+
+
 

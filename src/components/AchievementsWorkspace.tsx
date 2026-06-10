@@ -1,5 +1,16 @@
 import React from "react";
-import { Trophy, RefreshCw, Star, Trash2, ArrowRight } from "lucide-react";
+import { 
+  Trophy, 
+  Star, 
+  BookOpen, 
+  PenTool, 
+  GraduationCap, 
+  Flame, 
+  Award, 
+  Zap, 
+  Lock, 
+  CheckCircle 
+} from "lucide-react";
 
 interface DailyQuote {
   quote: string;
@@ -32,9 +43,7 @@ export default function AchievementsWorkspace({
   quoteIndex,
   setQuoteIndex
 }: AchievementsWorkspaceProps) {
-  // Compute percentage progress
-  const progressPercent = Math.round((completedLevels.length / 9) * 100);
-
+  
   // Load supporting states from localStorage for advanced metrics
   const completedGroups = React.useMemo(() => {
     try {
@@ -114,236 +123,172 @@ export default function AchievementsWorkspace({
     return streak;
   }, []);
 
-  // The custom responsive user requested list of achievements
   const BADGES = [
     {
       id: "first_10_words",
       title: "أول 10 كلمات",
-      requirement: "تعلم 10 كلمات جديدة",
-      icon: "📚",
+      requirement: "تعلم 10 كلمات جديدة وممارسة نطقها",
+      icon: BookOpen,
+      iconColor: "text-purple-600 bg-purple-50 border-purple-100",
       unlocked: totalWordsLearned >= 10,
-      colorClass: "from-[#f2a2b1]/20 to-[#dd7390]/10 border-[#f2a2b1] text-purple-950",
       progress: `${Math.min(totalWordsLearned, 10)} / 10 كلمة`
     },
     {
       id: "first_grammar",
       title: "أول قاعدة",
-      requirement: "أكمل أول قاعدة نحوية",
-      icon: "✍️",
+      requirement: "أكمل تحليل ونطق أول قاعدة نحوية بنجاح",
+      icon: PenTool,
+      iconColor: "text-amber-600 bg-amber-50 border-amber-100",
       unlocked: analyzedCount >= 1 || completedLevels.length >= 1,
-      colorClass: "from-amber-100/30 to-yellow-100/20 border-amber-300 text-amber-900",
       progress: `${(analyzedCount >= 1 || completedLevels.length >= 1) ? 1 : 0} / 1 قاعدة`
     },
     {
       id: "semester_1_complete",
       title: "إنهاء الترم الأول",
-      requirement: "أنهِ جميع دروس الترم الأول",
-      icon: "🎓",
+      requirement: "أنهِ جميع المستويات والدروس الخاصة بالترم الدراسي الأول",
+      icon: GraduationCap,
+      iconColor: "text-[#dd7390] bg-[#dd7390]/5 border-[#dd7390]/10",
       unlocked: completedLevels.includes(1) && completedLevels.includes(2) && completedLevels.includes(3),
-      colorClass: "from-sky-100/40 to-blue-50/20 border-sky-305 text-sky-900",
       progress: `${[1, 2, 3].filter(l => completedLevels.includes(l)).length} / 3 مستويات`
     },
     {
       id: "streak_7_days",
       title: "دخول 7 أيام متتالية",
-      requirement: "ادخل التطبيق 7 أيام بالتتابع",
-      icon: "🔥",
+      requirement: "حافظ على حماسك وادخل لمراجعة الكلمات 7 أيام بالتتابع",
+      icon: Flame,
+      iconColor: "text-orange-600 bg-orange-50 border-orange-100",
       unlocked: streakDays >= 7,
-      colorClass: "from-orange-100/30 to-red-50/20 border-orange-355 text-orange-900",
       progress: `${streakDays} / 7 أيام`
     },
     {
       id: "full_level_complete",
       title: "إنهاء مستوى كامل",
-      requirement: "أنهِ مستوى تعليمي كامل",
-      icon: "🏆",
+      requirement: "اجتز جميع اختبارات وبطاقات مستوى تعليمي كامل",
+      icon: Trophy,
+      iconColor: "text-emerald-600 bg-emerald-50 border-emerald-100",
       unlocked: completedLevels.length >= 1,
-      colorClass: "from-emerald-100/30 to-teal-50/20 border-emerald-355 text-emerald-900",
       progress: `${completedLevels.length} / 1 مستويات`
     },
     {
       id: "words_hero",
-      title: "بطل الكلمات",
-      requirement: "تعلم 100 كلمة جديدة",
-      icon: "🦁",
+      title: "بطل الكلمات اللغوية",
+      requirement: "عزز حصيلتك المعرفية وتعلم 100 كلمة جديدة",
+      icon: Award,
+      iconColor: "text-indigo-600 bg-indigo-50 border-indigo-100",
       unlocked: totalWordsLearned >= 100,
-      colorClass: "from-[#c0c6f4]/30 to-indigo-50/20 border-[#c0c6f4] text-indigo-900",
       progress: `${Math.min(totalWordsLearned, 100)} / 100 كلمة`
     },
     {
       id: "grammar_star",
-      title: "نجم القواعد",
-      requirement: "أتقن 10 قواعد نحوية",
-      icon: "⭐",
+      title: "نجم القواعد اللغوية",
+      requirement: "قم بتحليل وإتقان 10 قواعد وتراكيب لغوية",
+      icon: Star,
+      iconColor: "text-yellow-600 bg-yellow-50 border-yellow-100",
       unlocked: analyzedCount >= 10 || completedLevels.length >= 5,
-      colorClass: "from-yellow-100/40 to-amber-50/20 border-yellow-355 text-amber-950",
       progress: `${Math.min(analyzedCount, 10)} / 10 قواعد`
     },
     {
       id: "persistent_learner",
-      title: "متعلم مثابر",
-      requirement: "أكمل 30 درسًا",
-      icon: "⚡",
+      title: "متعلم مثابر ونشيط",
+      requirement: "أنجز إتمام 30 درسًا من دروس الأطلس التعليمي",
+      icon: Zap,
+      iconColor: "text-pink-600 bg-pink-50 border-pink-100",
       unlocked: completedGroups.length >= 30,
-      colorClass: "from-purple-100/30 to-pink-50/20 border-purple-355 text-[#dd7390]",
       progress: `${Math.min(completedGroups.length, 30)} / 30 درسًا`
     }
   ];
 
   return (
-    <div className="space-y-6 text-right scroll-smooth" dir="rtl">
-      
-      {/* Banner Card */}
-      <div className="bg-gradient-to-r from-indigo-600 to-pink-500 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
-        <div className="relative z-10 space-y-2">
-          <Trophy className="w-10 h-10 text-yellow-300 animate-bounce" />
-          <h2 className="text-xl font-extrabold font-sans">درع التميز وتتبع الإنجازات اللغوية ✨</h2>
-          <p className="text-xs text-white/90 font-medium">
-            هنا تُقاس جهودك المباركة في تطوير مهاراتك وصناعة مستقبلك الواعد بذكاء وتميز.
-          </p>
+    <div id="achievements-section" className="space-y-6 text-right scroll-smooth" dir="rtl">
+      {/* Title Header: Centered on gradient box of Mauve, Pink and Gray */}
+      <div className="bg-gradient-to-r from-purple-100/80 via-pink-100/80 to-slate-100/80 border border-purple-200/60 rounded-3xl p-6 text-center space-y-3 shadow-sm">
+        <div className="w-12 h-12 bg-gradient-to-tr from-purple-500 via-pink-400 to-slate-400 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md transform hover:scale-110 transition-all select-none duration-300">
+          <Trophy className="w-6 h-6 animate-pulse" />
         </div>
-      </div>
-
-      {/* Math Metrics Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        
-        <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-          <span className="text-[10px] text-slate-400 font-black block mb-1">جلسات المحادثة</span>
-          <span className="text-2xl font-black text-indigo-500 font-mono">{conversationsHad}</span>
-          <span className="text-[9px] text-slate-500 block">تبادل تدريبي متفاعل</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-          <span className="text-[10px] text-slate-400 font-black block mb-1">أقصى علامة اختبار</span>
-          <span className="text-2xl font-black text-emerald-500 font-mono">{quizScore}%</span>
-          <span className="text-[9px] text-slate-500 block">من {quizAttempts} محاولات شاملة</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-          <span className="text-[10px] text-slate-400 font-black block mb-1">مفردات الأطلس</span>
-          <span className="text-2xl font-black text-rose-500 font-mono">{customFlashcardsCount}</span>
-          <span className="text-[9px] text-slate-500 block">المرادفات وبطاقات الحفظ</span>
-        </div>
-
-        <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm text-center flex flex-col justify-center">
-          <span className="text-[10px] text-slate-400 font-black block mb-1">المستويات المفتوحة</span>
-          <span className="text-2xl font-black text-[#dd7390] font-mono">{unlockedLevel}/9</span>
-          <span className="text-[9px] text-slate-500 block">{progressPercent}% اكتمال الأطلس</span>
-        </div>
-
-      </div>
-
-      {/* Progress Bar details */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-sm space-y-3">
-        <div className="flex justify-between items-center text-xs">
-          <span className="font-bold text-slate-700">تطور وتكامل مهارات اللغة العام:</span>
-          <span className="font-mono font-black text-indigo-600">{progressPercent}%</span>
-        </div>
-        <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden shadow-inner flex">
-          <div
-            className="bg-gradient-to-r from-indigo-500 to-[#dd7390] h-full transition-all duration-500"
-            style={{ width: `${progressPercent}%` }}
-          ></div>
-        </div>
-        <p className="text-[10px] text-slate-400">
-          لقد قمت بإتمام <strong>{completedLevels.length}</strong> مستوى من أصل <strong>9</strong> مستويات تفاعلية ممتازة. استمر في الممارسة لتكسب الشارات والشهادات الفخمة!
+        <h3 className="text-2xl font-black text-slate-800 tracking-tight font-sans">قائمة الإنجازات</h3>
+        <p className="text-sm text-slate-600 font-bold max-w-xl mx-auto leading-relaxed">
+          تابع إنجازاتك وافتح الأقفال الذهبية بممارسة الدروس والأنشطة التفاعلية اليومية
         </p>
       </div>
 
-      {/* Daily Motivational Quote & Refresher */}
-      <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white rounded-3xl p-5 shadow-inner border border-slate-800 space-y-3">
-        <div className="flex justify-between items-center border-b border-white/10 pb-2.5">
-          <span className="text-[10px] bg-indigo-500/30 text-indigo-300 font-semibold px-2 py-0.5 rounded border border-indigo-500/20">النصائح والتعليمات اللغوية اليومية (Daily Advice)</span>
-          <button
-            type="button"
-            onClick={() => {
-              const nextIdx = (quoteIndex + 1) % DAILY_QUOTES.length;
-              setQuoteIndex(nextIdx);
-            }}
-            className="text-[10px] text-indigo-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
-          >
-            <span>حكمة أخرى</span>
-            <RefreshCw className="w-3 h-3" />
-          </button>
-        </div>
-
-        <p className="text-sm italic font-serif leading-relaxed text-slate-100 tracking-wide select-all text-left" dir="ltr">
-          "{DAILY_QUOTES[quoteIndex].quote}"
-        </p>
-        <p className="text-xs text-slate-400 text-left" dir="ltr">— {DAILY_QUOTES[quoteIndex].author}</p>
-        <p className="text-xs text-indigo-200 border-r-2 border-[#dd7390] pr-2 pt-1 font-sans">
-          {DAILY_QUOTES[quoteIndex].translation}
-        </p>
-      </div>
-
-      {/* Achievements Badges Grid */}
-      <div className="space-y-4">
-        <div className="border-r-4 border-purple-500 pr-3 py-1">
-          <h3 className="text-base font-black text-slate-800">قائمة الإنجازات</h3>
-          <p className="text-xs text-slate-500 font-bold mt-0.5">افتح الإنجازات بإكمال الدروس والتحديات</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {BADGES.map((badge) => (
+      {/* Grid List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {BADGES.map((badge) => {
+          const IconComponent = badge.icon;
+          return (
             <div
               key={badge.id}
-              className={`p-4 rounded-3xl border flex items-start gap-4 transition-all relative overflow-hidden ${
+              id={`badge-card-${badge.id}`}
+              className={`p-5 rounded-3xl border flex items-start gap-4 transition-all relative overflow-hidden ${
                 badge.unlocked
-                  ? `bg-white hover:shadow-md border-purple-200 shadow-sm`
-                  : "bg-slate-100/60 border-slate-200/80 opacity-65"
+                  ? "bg-white hover:shadow-md border-indigo-100 shadow-sm"
+                  : "bg-slate-50/70 border-slate-200/80"
               }`}
             >
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 ${
-                badge.unlocked 
-                  ? 'bg-purple-50 border border-purple-100 shadow-sm' 
-                  : 'bg-slate-200/85 border border-slate-300 text-slate-400'
-              }`}>
-                {badge.unlocked ? badge.icon : "🔒"}
+              {/* Responsive Icon Container with custom Overlays */}
+              <div className="relative shrink-0 select-none">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all border ${
+                  badge.unlocked 
+                    ? `${badge.iconColor} shadow-sm scale-110` 
+                    : "bg-slate-100 text-slate-400 border-slate-200 grayscale opacity-45 blur-[0.3px]"
+                }`}>
+                  <IconComponent className="w-7 h-7" />
+                </div>
+                
+                {/* Lock Overlay on Top of Icon if Locked */}
+                {!badge.unlocked ? (
+                  <div 
+                    id={`lock-overlay-${badge.id}`}
+                    className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg border-2 border-white"
+                    title="هذا الإنجاز مقفل حالياً"
+                  >
+                    <Lock className="w-3.5 h-3.5 fill-current" />
+                  </div>
+                ) : (
+                  /* Active state: Check Circle Overlay */
+                  <div 
+                    id={`unlocked-overlay-${badge.id}`}
+                    className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-md border-2 border-white"
+                    title="تم فتح الإنجاز بنجاح!"
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  </div>
+                )}
               </div>
-              <div className="space-y-1 flex-1">
-                <h4 className="text-xs font-black flex items-center gap-1.5 text-slate-800 justify-between">
-                  <span>{badge.title}</span>
+
+              {/* Achievement description and details */}
+              <div className="space-y-1.5 flex-1 select-none">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className={`text-sm font-black ${badge.unlocked ? "text-slate-800" : "text-slate-500"}`}>
+                    {badge.title}
+                  </h4>
                   {badge.unlocked ? (
-                    <span className="text-[9px] bg-purple-600 text-white px-2 py-0.5 rounded-full font-extrabold shadow-sm shadow-purple-200">مكتملة ✓</span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-black">
+                      مكتمل ✓
+                    </span>
                   ) : (
-                    <span className="text-[9px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-bold">مقفلة</span>
+                    <span className="text-[10px] bg-slate-250 text-slate-500 px-2.5 py-0.5 rounded-full font-bold">
+                      مغلق 🔒
+                    </span>
                   )}
-                </h4>
-                <p className="text-[11.5px] text-slate-650 font-bold">
+                </div>
+
+                <p className={`text-xs ${badge.unlocked ? "text-slate-600 font-medium" : "text-slate-400"}`}>
                   {badge.requirement}
                 </p>
-                <div className="flex items-center justify-between pt-1 border-t border-slate-100 mt-1.5 text-[9.5px]">
-                  <span className="text-slate-400">مؤشر التقدم:</span>
-                  <span className="font-mono font-black text-purple-600">{badge.progress}</span>
+
+                {/* Progress bar info */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100/80 mt-2 text-[10px]">
+                  <span className="text-slate-400">مؤشر الإنجاز الحالي:</span>
+                  <span className={`font-mono font-black ${badge.unlocked ? "text-indigo-600" : "text-slate-400"}`}>
+                    {badge.progress}
+                  </span>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
-
-      {/* System Reset Utility Block */}
-      <div className="bg-rose-50 border border-rose-100 p-4 rounded-3xl flex flex-col md:flex-row justify-between items-center gap-3">
-        <div className="space-y-0.5 text-center md:text-right">
-          <h4 className="text-xs font-black text-rose-800">تصفير مسار التقدم وإعادة الأقفال (Reset Progress)</h4>
-          <p className="text-[9px] text-rose-500 leading-normal">
-            هل ترغب في خوض غمار التحديات التسعة بالكامل من البداية وتأسيس مسار من الصفر؟
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            if (confirm("هل أنت متأكد تماماً من تصفير وإعادة قفل جميع المستويات؟")) {
-              onResetProgress();
-            }
-          }}
-          className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-[10px] transition-colors"
-        >
-          <span>تصفير المسار بالكامل 🗑️</span>
-        </button>
-      </div>
-
     </div>
   );
 }
