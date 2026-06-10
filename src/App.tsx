@@ -14,7 +14,8 @@ import {
   Trophy,
   Award,
   HelpCircle,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
 import { 
   Persona, 
@@ -107,7 +108,7 @@ export default function App() {
   // Game map state & custom tabs
   const [unlockedLevel, setUnlockedLevel] = useState<number>(1);
   const [completedLevels, setCompletedLevels] = useState<number[]>([]);
-  const [mainTab, setMainTab] = useState<"home" | "achievements" | "about" | "certificates" | "support">("home");
+  const [mainTab, setMainTab] = useState<"home" | "training" | "achievements" | "about" | "certificates" | "support">("home");
   const [currentTickTime, setCurrentTickTime] = useState<string>("14:44");
   const [bonusMinutes, setBonusMinutes] = useState<number>(15);
 
@@ -1253,13 +1254,159 @@ export default function App() {
                     }}
                     onLevelStart={(level) => {
                       setSelectedPersona(PRESET_PERSONAS.find(p => p.id === level.personaId) || PRESET_PERSONAS[0]);
-                      setMainTab("support");
+                      setMainTab("training");
                       setActiveTab("chat");
                     }}
                     onLevelComplete={(lvlNum) => completeLevel(lvlNum)}
                     onResetProgress={resetAllLevelsProgress}
                     LEARNING_LEVELS={LEARNING_LEVELS}
                   />
+                )}
+
+                {mainTab === "training" && (
+                  <div className="space-y-6 animate-fadeIn text-right" dir="rtl">
+                    <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white/60 backdrop-blur-md rounded-3xl p-5 border border-pink-100 shadow-sm">
+                      <div className="text-right">
+                        <h2 className="text-2xl font-black text-purple-950 font-sans flex items-center gap-2">
+                          <span>🔮</span>
+                          <span>المختبر والمدرب التفاعلي الذكي</span>
+                        </h2>
+                        <p className="text-xs text-slate-500 font-bold mt-1">
+                          تحدث مع الذكاء الاصطناعي، تدرّب على صياغة الجمل، وسرّع من طلاقتك باستخدام الذكاء الاصطناعي من Gemini
+                        </p>
+                      </div>
+
+                      {/* Sub tab buttons for practice type */}
+                      <div className="flex items-center gap-1.5 p-1 bg-slate-100 border border-slate-200 rounded-2xl w-full md:w-auto overflow-x-auto">
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("chat")}
+                          className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                            activeTab === "chat"
+                              ? "bg-purple-600 text-white shadow-md font-bold"
+                              : "text-slate-600 hover:text-slate-850 hover:bg-white/40 font-medium"
+                          }`}
+                        >
+                          🎙️ الدردشة الذكية
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("analyzer")}
+                          className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                            activeTab === "analyzer"
+                              ? "bg-purple-600 text-white shadow-md font-bold"
+                              : "text-slate-600 hover:text-slate-850 hover:bg-white/40 font-medium"
+                          }`}
+                        >
+                          🧠 محلل الجمل
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("quiz")}
+                          className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                            activeTab === "quiz"
+                              ? "bg-purple-600 text-white shadow-md font-bold"
+                              : "text-slate-600 hover:text-slate-850 hover:bg-white/40 font-medium"
+                          }`}
+                        >
+                          📝 الاختبار الذكي
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab("flashcards")}
+                          className={`flex-1 md:flex-initial px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                            activeTab === "flashcards"
+                              ? "bg-purple-600 text-white shadow-md font-bold"
+                              : "text-slate-600 hover:text-slate-850 hover:bg-white/40 font-medium"
+                          }`}
+                        >
+                          🗂️ الكروت التعليمية
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-900 border border-slate-800 rounded-[32px] p-6 shadow-2xl relative overflow-hidden ring-1 ring-slate-800/50">
+                      {activeTab === "chat" && (
+                        <ChatPanel
+                          selectedPersona={selectedPersona}
+                          onChangePersona={setSelectedPersona}
+                          chatInputValue={chatInputValue}
+                          setChatInputValue={setChatInputValue}
+                          chatHistory={getActiveChatMessages()}
+                          chatLoading={chatLoading}
+                          chatTranslateToggle={!!chatTranslateToggle[selectedPersona.id]}
+                          setChatTranslateToggle={(val) =>
+                            setChatTranslateToggle((prev) => ({ ...prev, [selectedPersona.id]: val }))
+                          }
+                          onSendMessage={handleSendMessage}
+                          onClearHistory={clearChatHistory}
+                          speakText={speakText}
+                          onQuickPaste={handleQuickPaste}
+                        />
+                      )}
+
+                      {activeTab === "analyzer" && (
+                        <AnalyzerPanel
+                          analyzerInputValue={analyzerInputValue}
+                          setAnalyzerInputValue={setAnalyzerInputValue}
+                          analyzerLoading={analyzerLoading}
+                          analyzerResult={analyzerResult}
+                          analyzerError={analyzerError}
+                          onAnalyzeSubmit={handleAnalyzeSentence}
+                          onQuickPaste={handleQuickPaste}
+                        />
+                      )}
+
+                      {activeTab === "quiz" && (
+                        <QuizPanel
+                          quizTopic={quizTopic}
+                          setQuizTopic={setQuizTopic}
+                          quizCustomTopic={quizCustomTopic}
+                          setQuizCustomTopic={setQuizCustomTopic}
+                          quizLevel={quizLevel}
+                          setQuizLevel={setQuizLevel}
+                          quizLoading={quizLoading}
+                          quizQuestions={quizQuestions}
+                          selectedAnswers={selectedAnswers}
+                          submittedQuiz={submittedQuiz}
+                          quizError={quizError}
+                          quizScore={quizScore}
+                          onGenerateQuiz={handleGenerateQuiz}
+                          onSelectAnswer={handleSelectAnswer}
+                          onGradeQuiz={handleGradeQuiz}
+                        />
+                      )}
+
+                      {activeTab === "flashcards" && (
+                        <FlashcardsPanel
+                          flashcardSearch={flashcardSearch}
+                          setFlashcardSearch={setFlashcardSearch}
+                          flashcardLevelFilter={flashcardLevelFilter}
+                          setFlashcardLevelFilter={setFlashcardLevelFilter}
+                          showAddCardModal={showAddCardModal}
+                          setShowAddCardModal={setShowAddCardModal}
+                          newCardWord={newCardWord}
+                          setNewCardWord={setNewCardWord}
+                          newCardIpa={newCardIpa}
+                          setNewCardIpa={setNewCardIpa}
+                          newCardPartOfSpeech={newCardPartOfSpeech}
+                          setNewCardPartOfSpeech={setNewCardPartOfSpeech}
+                          newCardMeaning={newCardMeaning}
+                          setNewCardMeaning={setNewCardMeaning}
+                          newCardExample={newCardExample}
+                          setNewCardExample={setNewCardExample}
+                          newCardExampleTranslation={newCardExampleTranslation}
+                          setNewCardExampleTranslation={setNewCardExampleTranslation}
+                          newCardLevel={newCardLevel}
+                          setNewCardLevel={setNewCardLevel}
+                          onAddFlashcard={handleAddFlashcard}
+                          onDeleteFlashcard={deleteCustomFlashcard}
+                          filteredFlashcards={filteredFlashcards}
+                          speakText={speakText}
+                        />
+                      )}
+                    </div>
+                  </div>
                 )}
 
                 {mainTab === "achievements" && (
@@ -1347,6 +1494,21 @@ export default function App() {
                       <BookOpen className="w-4.5 h-4.5" />
                     </div>
                     <span className="text-[10px] font-bold">الرئيسية</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMainTab("training")}
+                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
+                      mainTab === "training" 
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    }`}
+                  >
+                    <div>
+                      <Sparkles className="w-4.5 h-4.5" />
+                    </div>
+                    <span className="text-[10px] font-bold">التدريب الذكي</span>
                   </button>
 
                   <button

@@ -713,6 +713,13 @@ export default function HomeWorkspace({
     return sheetWords.filter(w => w.semester === selectedSemester);
   }, [sheetWords, selectedSemester]);
 
+  // Real-time group search logic (supports any single word match)
+  const groupMatchingWordsResults = useMemo(() => {
+    if (!groupSearchQuery.trim()) return [];
+    const query = groupSearchQuery.toLowerCase().trim();
+    return allSortedGroups.filter(item => item.group.toLowerCase().includes(query));
+  }, [allSortedGroups, groupSearchQuery]);
+
   useEffect(() => {
     setSelectedGroup("All");
   }, [selectedSemester]);
@@ -783,6 +790,13 @@ export default function HomeWorkspace({
       if (currentWordIndex < trainingWords.length - 1) {
         setCurrentWordIndex(prev => prev + 1);
       } else {
+        // Open the CPM Link in a new window/tab to reward publisher CPM traffic
+        try {
+          window.open("https://www.effectivecpmnetwork.com/ktczatvrx?key=73981497b63984cc0d895e217c1ce2e2", "_blank");
+        } catch (e) {
+          console.error("Failed to open link:", e);
+        }
+
         // Save completed group key in completed groups!
         const groupKey = `${activeTrainingLevel.number}_${activeTrainingSemester}_${activeTrainingGroup}`;
         const newCompleted = [...completedGroups];
@@ -1165,6 +1179,44 @@ export default function HomeWorkspace({
 
         {/* Bottom Modern Elegant Navigation Bar (Prev left, Next right) */}
         <div className="max-w-md w-full mx-auto flex flex-col gap-2.5 mt-4">
+          
+          {currentWordIndex === trainingWords.length - 1 && (
+            <div className="w-full bg-gradient-to-br from-purple-700 via-pink-600 to-indigo-700 rounded-2xl p-4 text-white text-center shadow-lg border border-purple-500/20 animate-fadeIn" dir="rtl">
+              <div className="flex items-center justify-center gap-1.5 mb-2.5">
+                <span className="text-lg">🎉</span>
+                <span className="text-[11px] font-black tracking-wide text-indigo-100 font-sans">لقد وصلت لآخر كلمة في هذه المجموعة!</span>
+              </div>
+              
+              {isCurrentWordFullyCompleted ? (
+                <a 
+                  href="https://www.effectivecpmnetwork.com/ktczatvrx?key=73981497b63984cc0d895e217c1ce2e2"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    // Open and trigger the actual level progression in the parent app
+                    setTimeout(() => {
+                      handleNextWord();
+                    }, 800);
+                  }}
+                  className="inline-flex w-full py-3.5 px-4 bg-amber-400 hover:bg-amber-300 text-purple-950 font-black rounded-xl text-xs transition-all shadow-md active:scale-95 text-center flex items-center justify-center gap-2 border border-amber-300 relative overflow-hidden group cursor-pointer animate-pulse"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                  <span>🚀 اكمل لننتقل إلى المستوى التالي</span>
+                </a>
+              ) : (
+                <div 
+                  className="w-full py-3.5 px-4 bg-slate-100/10 text-slate-300 font-bold rounded-xl text-xs border border-white/10 cursor-not-allowed text-center"
+                >
+                  🔒 اكمل لننتقل إلى المستوى التالي (يرجى التدرب أولاً)
+                </div>
+              )}
+
+              {!isCurrentWordFullyCompleted && (
+                <p className="text-[10px] text-pink-200/90 font-bold mt-2">⚠️ يرجى نطق وممارسة كتابة الكلمة الحالية أولاً لتفعيل الانتقال!</p>
+              )}
+            </div>
+          )}
+
           <div className="w-full flex justify-between items-center bg-white border border-pink-100 rounded-2xl p-4 shadow-sm">
             {/* Next (التالي) -> Right Side of row in RTL layout */}
             <button
@@ -1177,7 +1229,7 @@ export default function HomeWorkspace({
                   : "bg-slate-100 text-slate-350 border border-slate-200/30 cursor-not-allowed"
               }`}
             >
-              <span>{currentWordIndex === trainingWords.length - 1 ? "إكمال التدريب 🎓" : "التالي"}</span>
+              <span>{currentWordIndex === trainingWords.length - 1 ? "اكمل لننتقل إلى المستوى التالي 🎓" : "التالي"}</span>
               <ChevronLeft className="w-4 h-4" />
             </button>
 
@@ -1218,13 +1270,6 @@ export default function HomeWorkspace({
       </div>
     );
   }
-
-  // Real-time group search logic (supports any single word match)
-  const groupMatchingWordsResults = useMemo(() => {
-    if (!groupSearchQuery.trim()) return [];
-    const query = groupSearchQuery.toLowerCase().trim();
-    return allSortedGroups.filter(item => item.group.toLowerCase().includes(query));
-  }, [allSortedGroups, groupSearchQuery]);
 
   return (
     <div className="w-full text-right animate-fadeIn" dir="rtl">
