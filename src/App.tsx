@@ -43,7 +43,6 @@ import FlashcardsPanel from "./components/FlashcardsPanel";
 
 // Import motion & beautiful custom brand assets
 import { motion, AnimatePresence } from "motion/react";
-import appLogo from "./assets/stitchlab_logo.png";
 import welcomeRabbit from "./assets/1000000038.webp";
 
 export default function App() {
@@ -921,7 +920,7 @@ export default function App() {
                 className="w-full h-full flex items-center justify-center"
               >
                 <img 
-                  src={appLogo} 
+                  src="/stitchlab_logo.png" 
                   alt="StitchLab Splash" 
                   referrerPolicy="no-referrer"
                   className="max-w-full max-h-[85vh] object-contain drop-shadow-2xl rounded-[2.5rem]"
@@ -951,7 +950,7 @@ export default function App() {
             
             <div className="text-center space-y-2">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-white border border-pink-100 shadow-xl overflow-hidden mb-2 p-1.5 animate-fadeIn">
-                <img src={appLogo} alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                <img src="/stitchlab_logo.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
               </div>
               <h1 id="stitchlab-brand-heading" className="text-5xl font-extrabold tracking-tight">
                 <span className="text-purple-600 font-extrabold">Stitch</span>
@@ -1266,7 +1265,7 @@ export default function App() {
                   
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-xl bg-white border border-pink-100 shadow-sm overflow-hidden p-0.5 flex-shrink-0 select-none">
-                      <img src={appLogo} alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                      <img src="/stitchlab_logo.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                     </div>
                     <div>
                       <h1 className="font-sans font-black text-xl tracking-tight">
