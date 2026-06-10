@@ -34,6 +34,7 @@ import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
 import CertificatesWorkspace from "./components/CertificatesWorkspace";
 import LearningTimer from "./components/LearningTimer";
+import AdsterraBanner from "./components/AdsterraBanner";
 
 // Import newly refactored dynamic panels
 import ChatPanel from "./components/ChatPanel";
@@ -55,7 +56,7 @@ export default function App() {
       const target = event.target as HTMLElement;
       if (!target) return;
 
-      const clickable = target.closest("button, [role='button'], a, input[type='submit'], input[type='button'], .cursor-pointer, [id*='level-card']");
+      const clickable = target.closest("button, [role='button'], a, input[type='submit'], input[type='button'], .cursor-pointer, [id*='level-card']") as HTMLElement;
       if (clickable) {
         // Only ignore if clicking nested select elements or textual input boxes to avoid typing sounds.
         const tagName = target.tagName.toLowerCase();
@@ -66,6 +67,12 @@ export default function App() {
           return;
         }
         playButtonClickSound();
+
+        // Make the button vibrate/shake!
+        clickable.classList.add("animate-shake");
+        setTimeout(() => {
+          clickable.classList.remove("animate-shake");
+        }, 360);
       }
     };
 
@@ -1191,7 +1198,7 @@ export default function App() {
         </div>
       ) : (
         /* 2. LOGGED IN DASHBOARD WORKSPACE */
-        <div id="stitchlab-workspace" className="flex flex-col min-h-screen bg-gradient-to-br from-[#FDF2F4] via-white to-[#FAF0FF] text-slate-900 antialiased font-sans relative overflow-hidden">
+        <div id="stitchlab-workspace" className="flex flex-col min-h-screen bg-gradient-to-br from-[#FFF0F3] via-[#FFE3E8] to-[#FFD6DC] text-slate-900 antialiased font-sans relative overflow-hidden">
           
           {/* REGULAR STUDY INTERACTIVE DASHBOARD VIEW */}
           <>
@@ -1200,7 +1207,7 @@ export default function App() {
                   
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-xl bg-white border border-pink-100 shadow-sm overflow-hidden p-0.5 flex-shrink-0 select-none">
-                      <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/d50e6c29754ea11612492e06c68b3513b20af0f5/file_00000000350071f4a16cedee12520267~3.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                       <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/d50e6c29754ea11612492e06c68b3513b20af0f5/file_00000000350071f4a16cedee12520267~3.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                     </div>
                     <div>
                       <h1 className="font-sans font-black text-xl tracking-tight">
@@ -1211,15 +1218,6 @@ export default function App() {
                   </div>
 
                   <div className="flex items-center gap-3">
-                    {/* Visual Study Timer Badge */}
-                    <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 border border-purple-150/50 rounded-xl shadow-inner select-none">
-                      <span className="text-[12px] animate-pulse">⏱️</span>
-                      <span className="text-xs font-black text-purple-950 font-mono" dir="ltr">
-                        {formatTime(dailySecondsLeft)}
-                      </span>
-                      <span className="text-[10px] text-purple-700 font-bold hidden xs:inline">متبقي</span>
-                    </div>
-
                     <span className="text-xs font-bold text-slate-700 hidden sm:inline">الطالب: {currentUser?.name || "زائر التجربة"}</span>
                     <button
                       type="button"
@@ -1327,6 +1325,9 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {/* ADSTERRA BANNER IN FOOTER AREA */}
+                <AdsterraBanner />
 
               </main>
 

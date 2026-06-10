@@ -890,7 +890,7 @@ export default function HomeWorkspace({
     };
 
     return (
-      <div className="w-full min-h-screen bg-gradient-to-br from-[#FDF2F4] via-white to-[#FAF0FF] text-slate-900 flex flex-col justify-between py-6 px-4 md:px-6 animate-fadeIn" dir="rtl">
+      <div className="w-full min-h-screen bg-gradient-to-br from-[#FFF0F3] via-[#FFE3E8] to-[#FFD6DC] text-slate-900 flex flex-col justify-between py-6 px-4 md:px-6 animate-fadeIn" dir="rtl">
         {/* Header toolbar */}
         <div className="max-w-md w-full mx-auto bg-white/90 backdrop-blur-md border border-pink-100/60 rounded-3xl p-3 flex items-center justify-between mb-4 shadow-sm transition-all">
           <button
@@ -1219,15 +1219,111 @@ export default function HomeWorkspace({
     );
   }
 
+  // Real-time group search logic (supports any single word match)
+  const groupMatchingWordsResults = useMemo(() => {
+    if (!groupSearchQuery.trim()) return [];
+    const query = groupSearchQuery.toLowerCase().trim();
+    return allSortedGroups.filter(item => item.group.toLowerCase().includes(query));
+  }, [allSortedGroups, groupSearchQuery]);
+
   return (
-    <div className="w-full text-right" dir="rtl">
-      
-      {/* Purified Top Status Bar focusing only on Learning Time - neutral minimalist theme */}
-      <div className="max-w-md mx-auto flex items-center justify-center mb-6 mt-4 px-1 text-xs font-sans">
-        <div className="bg-white text-slate-800 font-extrabold text-[12px] px-5 py-2.5 rounded-[20px] shadow-[0_10px_30px_rgba(236,72,153,0.03),0_1px_3px_rgba(0,0,0,0.02)] border border-pink-100/30 flex items-center gap-2.5">
-          <span className="text-base">🕒</span>
-          <span className="text-slate-600">وقت التعلم الكلي:</span>
-          <span className="font-mono text-sm bg-pink-50/40 border border-pink-100/50 px-3 py-0.5 rounded-full text-purple-600 font-black">{currentTickTime}</span>
+    <div className="w-full text-right animate-fadeIn" dir="rtl">
+
+      {/* 🔍 REAL-TIME DYNAMIC GROUP SEARCH BLOCK */}
+      <div className="max-w-md mx-auto mb-6 px-3" id="group-search-card">
+        <div className="bg-white rounded-[26px] p-5 border border-pink-100 shadow-[0_10px_35px_rgba(236,72,153,0.04)] space-y-4">
+          <div className="flex items-center gap-2.5 pb-2 border-b border-pink-50">
+            <span className="text-2xl">🔍</span>
+            <div className="text-right">
+              <h4 className="text-xs font-black text-slate-900">البحث السريع عن المجموعات</h4>
+              <p className="text-[10px] text-slate-450 font-bold">حتى لو كتبت كلمة واحدة، ستظهر المجموعات المطابقة فوراً</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <input
+              type="text"
+              value={groupSearchQuery}
+              onChange={(e) => setGroupSearchQuery(e.target.value)}
+              placeholder="ابحث عن اسم المجموعة هنا..."
+              className="w-full text-right bg-pink-50/20 hover:bg-pink-50/40 text-slate-850 border border-pink-205 rounded-xl py-3 px-4 text-xs font-bold focus:outline-none focus:border-pink-400 transition-all"
+            />
+            {groupSearchQuery && (
+              <button
+                type="button"
+                onClick={() => setGroupSearchQuery("")}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 font-black text-xs cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Search Results */}
+          {groupSearchQuery.trim() !== "" && (
+            <div className="space-y-2 mt-2 animate-fadeIn">
+              <div className="flex justify-between items-center text-[10px] text-slate-400 font-black px-1">
+                <span>المجموعات المكتشفة ({groupMatchingWordsResults.length})</span>
+                {groupMatchingWordsResults.length === 0 && <span>لم نجد أي مـجموعة مطابقة</span>}
+              </div>
+
+              <div className="max-h-[220px] overflow-y-auto space-y-2 pr-0.5">
+                {groupMatchingWordsResults.map((item) => {
+                  const isUnlocked = isGroupSequenceUnlocked(item.key);
+                  const isCompleted = completedGroups.includes(item.key);
+
+                  return (
+                    <div 
+                      key={item.key} 
+                      className={`p-3 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-3 ${
+                        isUnlocked 
+                          ? "bg-pink-50/40 border-pink-100 hover:bg-pink-50/80 hover:border-pink-200" 
+                          : "bg-slate-50/80 border-slate-150"
+                      }`}
+                    >
+                      {/* Left Block -> action triggers directly if unlocked or locks display */}
+                      <div className="flex items-center gap-2">
+                        {isUnlocked ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lvlObj = LEARNING_LEVELS.find(l => l.number === item.level);
+                              if (lvlObj) {
+                                setActiveTrainingLevel(lvlObj);
+                                setActiveTrainingSemester(item.semester);
+                                setActiveTrainingGroup(item.group);
+                                setCurrentWordIndex(0);
+                              }
+                            }}
+                            className="bg-pink-500 hover:bg-pink-600 text-white font-black text-[11px] py-1.5 px-3.5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm shadow-pink-100"
+                          >
+                            تأسيس وبدء 🔓
+                          </button>
+                        ) : (
+                          <span className="bg-amber-50 border border-amber-200 text-amber-500 rounded-xl p-2 shrink-0" title="مغلق">
+                            <Lock className="w-3.5 h-3.5" />
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Right Block -> name and metadata metadata constraints */}
+                      <div className="text-right space-y-1">
+                        <div className="flex items-center gap-1.5 justify-end">
+                          {isCompleted && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-black">جاهز ✓</span>}
+                          <h5 className="text-xs font-black text-slate-800">{item.group}</h5>
+                        </div>
+                        <div className="flex items-center gap-1.5 justify-end text-[9px] text-slate-500 font-bold">
+                          <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-semibold">{item.semester}</span>
+                          <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded select-none">المستوى {item.level}</span>
+                        </div>
+                      </div>
+
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1403,9 +1499,8 @@ export default function HomeWorkspace({
 
                 {/* Lock icon representing the level constraint */}
                 {!isUnlocked && (
-                  <span className="absolute bottom-1 bg-amber-50 border border-amber-200 text-amber-600 rounded-lg py-0.5 px-1.5 text-[9px] font-black flex items-center gap-0.5 shadow-sm transform scale-90 duration-150 group-hover:scale-100 group-hover:bg-amber-100">
-                    <Lock className="w-2.5 h-2.5" />
-                    <span>مغلق</span>
+                  <span className="absolute bottom-1.5 bg-amber-50 border border-amber-200 text-amber-600 rounded-full p-1.5 shadow-sm transform scale-90 duration-150 group-hover:scale-110">
+                    <Lock className="w-3.5 h-3.5" />
                   </span>
                 )}
 
