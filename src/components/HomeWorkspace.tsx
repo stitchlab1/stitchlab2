@@ -32,6 +32,8 @@ interface HomeWorkspaceProps {
   onUnlockGroup: (groupKey: string) => void;
   completedGroupsProp?: string[];
   setCompletedGroupsProp?: React.Dispatch<React.SetStateAction<string[]>>;
+  completedWordsCount: number;
+  studentSemester?: string;
 }
 
 interface SheetWord {
@@ -370,7 +372,9 @@ export default function HomeWorkspace({
   unlockedAdvertiserGroups,
   onUnlockGroup,
   completedGroupsProp,
-  setCompletedGroupsProp
+  setCompletedGroupsProp,
+  completedWordsCount,
+  studentSemester = "الفصل الدراسي الأول"
 }: HomeWorkspaceProps) {
   const [sheetWords, setSheetWords] = useState<SheetWord[]>(() => {
     const saved = localStorage.getItem("stitchlab_sheet_words");
@@ -429,6 +433,7 @@ export default function HomeWorkspace({
 
   const [hasListened, setHasListened] = useState<boolean>(false);
   const [dismissedSpecialBubble, setDismissedSpecialBubble] = useState<boolean>(false);
+  const [showCompletionWarning, setShowCompletionWarning] = useState<boolean>(false);
 
   // --- PROGRESSIVE WEB APP (PWA) AND OFFLINE / ADSTERRA ADVERTISING MANAGEMENT ---
   const [offlineError, setOfflineError] = useState<string | null>(null);
@@ -543,8 +548,16 @@ export default function HomeWorkspace({
     if (index <= 0) {
       return true;
     }
-    return unlockedAdvertiserGroups.includes(groupKey) || completedGroups.includes(groupKey);
-  }, [allSortedGroups, unlockedAdvertiserGroups, completedGroups]);
+    
+    // If the group itself is already completed, it is always unlocked/accessible
+    if (completedGroups.includes(groupKey)) {
+      return true;
+    }
+
+    // Otherwise, it is unlocked only if the immediately previous group is completed
+    const prevGroupKey = list[index - 1].key;
+    return completedGroups.includes(prevGroupKey);
+  }, [allSortedGroups, completedGroups]);
 
   const [pendingUnlockGroupKey, setPendingUnlockGroupKey] = useState<string | null>(null);
   const [lastAttemptedAction, setLastAttemptedAction] = useState<"extra_time" | "new_group">("extra_time");
@@ -652,6 +665,7 @@ export default function HomeWorkspace({
     setIsListening(false);
     setHasListened(false);
     setDismissedSpecialBubble(false);
+    setShowCompletionWarning(false);
     setSpellingFeedback({ type: null, msg: "" });
   }, [currentWordIndex, activeTrainingLevel]);
 
@@ -678,8 +692,22 @@ export default function HomeWorkspace({
         groups.add(w.group.trim());
       }
     });
-    return Array.from(groups);
-  }, [sheetWords, selectedLevel, modalSemester]);
+    const list = Array.from(groups);
+    
+    // Sort sequence: Unlocked / open groups first
+    list.sort((a, b) => {
+      const keyA = `${selectedLevel.number}_${modalSemester}_${a}`;
+      const keyB = `${selectedLevel.number}_${modalSemester}_${b}`;
+      const unlA = isGroupSequenceUnlocked(keyA) ? 1 : 0;
+      const unlB = isGroupSequenceUnlocked(keyB) ? 1 : 0;
+      
+      if (unlA !== unlB) {
+        return unlB - unlA; // Unlocked (1) first
+      }
+      return a.localeCompare(b, "ar");
+    });
+    return list;
+  }, [sheetWords, selectedLevel, modalSemester, isGroupSequenceUnlocked]);
 
   useEffect(() => {
     setModalGroup("");
@@ -806,9 +834,11 @@ export default function HomeWorkspace({
     const handleNextWord = () => {
       const isWordDone = successCount >= 3 && hasListened && speechScore === true;
       if (!isWordDone) {
+        setShowCompletionWarning(true);
         return;
       }
 
+      setShowCompletionWarning(false);
       if (currentWordIndex < trainingWords.length - 1) {
         setCurrentWordIndex(prev => prev + 1);
       } else {
@@ -928,7 +958,7 @@ export default function HomeWorkspace({
     return (
       <div className="w-full min-h-screen bg-gradient-to-br from-[#FFF0F3] via-[#FFE3E8] to-[#FFD6DC] text-slate-900 flex flex-col justify-between py-6 px-4 md:px-6 animate-fadeIn" dir="rtl">
         {/* Header toolbar */}
-        <div className="max-w-md w-full mx-auto bg-white/90 backdrop-blur-md border border-pink-100/60 rounded-3xl p-3 flex items-center justify-between mb-4 shadow-sm transition-all">
+        <div className="max-w-md w-full mx-auto bg-white/95 backdrop-blur-md border border-pink-200/50 rounded-2xl p-2 px-3 flex items-center justify-between mb-4 shadow-[0_4px_20px_rgba(244,63,94,0.05)] transition-all" id="training-header-toolbar">
           <button
             type="button"
             onClick={() => {
@@ -936,10 +966,38 @@ export default function HomeWorkspace({
               setActiveTrainingLevel(null);
               setSelectedLevel(prev);
             }}
-            className="text-[12px] bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-pink-250/80 hover:border-rose-200 rounded-2xl px-5 py-3 font-bold transition-all cursor-pointer shadow-sm w-full text-center flex items-center justify-center gap-2 active:scale-[0.98]"
+            className="w-9 h-9 bg-pink-50/50 hover:bg-pink-100 text-slate-700 hover:text-pink-600 border border-pink-100 rounded-xl flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+            title="رجوع لشاشة الاختيار"
           >
-            <span>الرجوع لشاشة الاختيار ⬅️</span>
+            <ChevronRight className="w-5 h-5 stroke-[2.5]" />
           </button>
+
+          <div className="text-center flex flex-col items-center">
+            <span className="text-[10px] text-purple-700 font-extrabold bg-purple-50/85 px-2 py-0.5 rounded-full border border-purple-100/30">
+              {activeTrainingGroup}
+            </span>
+            <span className="text-[11px] text-slate-600 font-bold mt-0.5 font-sans">
+              المستوى {activeTrainingLevel?.number} - {activeTrainingSemester}
+            </span>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-100 rounded-xl px-2.5 py-1.5 text-[10px] font-black text-slate-600 font-mono">
+            {currentWordIndex + 1} / {trainingWords.length}
+          </div>
+        </div>
+
+        {/* 📊 Progress indicator/bar placed at the top of the training screen */}
+        <div className="max-w-md w-full mx-auto bg-white/95 backdrop-blur-md border border-pink-100/70 rounded-2xl p-3.5 shadow-[0_6px_25px_rgba(244,63,94,0.03)] select-none mb-1" id="top-progress-indicator-box">
+          <div className="flex items-center justify-between text-[11px] font-black text-slate-600 mb-2 font-sans">
+            <span className="flex items-center gap-1 text-slate-700">🏆 مؤشر تقدم المجموعة: <span className="text-purple-700">{currentWordIndex + 1} / {trainingWords.length}</span></span>
+            <span className="text-pink-600 font-black">{Math.round(((currentWordIndex + 1) / trainingWords.length) * 100)}%</span>
+          </div>
+          <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60 p-0.5 relative animate-pulse">
+            <div 
+              className="h-full bg-gradient-to-r from-purple-500 via-pink-400 to-pink-500 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${((currentWordIndex + 1) / trainingWords.length) * 100}%` }}
+            />
+          </div>
         </div>
 
         {/* Practice Body Center Grid */}
@@ -979,7 +1037,7 @@ export default function HomeWorkspace({
               <span className="text-slate-550">اكتب الكلمة بالإنجليزية (3 مرات):</span>
             </div>
 
-            <div className="relative w-full flex gap-2">
+            <div className="relative w-full">
               <input
                 type="text"
                 value={singleInput}
@@ -1042,7 +1100,7 @@ export default function HomeWorkspace({
                   }
                 }}
                 placeholder={successCount >= 3 ? "تمت الكتابة ٣ مرات بنجاح! 🎉" : "اكتب الكلمة بالإنجليزية هنا..."}
-                className={`flex-1 bg-white/50 text-slate-900 border-2 ${
+                className={`w-full bg-white/50 text-slate-900 border-2 ${
                   successCount >= 3 
                     ? "border-emerald-500 bg-emerald-50/10 ring-2 ring-emerald-500/10" 
                     : showTryAgain
@@ -1051,37 +1109,6 @@ export default function HomeWorkspace({
                 } rounded-xl px-4 py-3 text-xs font-mono tracking-wide focus:outline-none transition-all text-left placeholder:text-slate-400 font-bold`}
                 dir="ltr"
               />
-
-              {successCount < 3 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const typing = singleInput.trim().toLowerCase();
-                    const target = currentWord.word.toLowerCase();
-                    if (!typing) return;
-                    if (typing === target) {
-                      setShowTryAgain(false);
-                      setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
-                      playAudioFeedback(true);
-                      setTimeout(() => {
-                        setSuccessCount(prev => {
-                          const next = prev + 1;
-                          return next > 3 ? 3 : next;
-                        });
-                        setSingleInput("");
-                        setSpellingFeedback({ type: null, msg: "" });
-                      }, 1200);
-                    } else {
-                      setShowTryAgain(true);
-                      setSpellingFeedback({ type: "error", msg: "Try again! ⚠️ تهجئة غير صحيحة (حاول مجدداً)" });
-                      playAudioFeedback(false);
-                    }
-                  }}
-                  className="px-4 py-3 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl text-xs transition-colors cursor-pointer shadow-md shadow-purple-600/10 active:scale-95 shrink-0"
-                >
-                  تحقق
-                </button>
-              )}
             </div>
 
             {spellingFeedback.msg && (
@@ -1240,35 +1267,6 @@ export default function HomeWorkspace({
           )}
 
           <div className="w-full flex justify-between items-center bg-white border border-pink-100 rounded-2xl p-4 shadow-sm">
-            {/* Next (التالي) -> Right Side of row in RTL layout */}
-            <button
-              type="button"
-              onClick={handleNextWord}
-              disabled={!isCurrentWordFullyCompleted}
-              className={`py-3 px-5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 shadow-md active:scale-[0.97] ${
-                isCurrentWordFullyCompleted 
-                  ? "bg-purple-600 hover:bg-purple-700 text-white cursor-pointer" 
-                  : "bg-slate-100 text-slate-350 border border-slate-200/30 cursor-not-allowed"
-              }`}
-            >
-              <span>{currentWordIndex === trainingWords.length - 1 ? "اكمل لننتقل إلى المستوى التالي 🎓" : "التالي"}</span>
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            {/* Progress indicator/bar that increases as you complete each word */}
-            <div className="flex-1 mx-4 flex flex-col items-center gap-1.5 min-w-0 select-none">
-              <div className="flex items-center justify-between w-full text-[10px] font-extrabold text-slate-500 px-1 font-sans">
-                <span>الكلمة: {currentWordIndex + 1} من {trainingWords.length}</span>
-                <span className="text-pink-600 font-bold">{Math.round(((currentWordIndex + 1) / trainingWords.length) * 100)}%</span>
-              </div>
-              <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden border border-slate-200/60 p-0.5 relative">
-                <div 
-                  className="h-full bg-gradient-to-r from-purple-400 via-pink-400 to-pink-600 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${((currentWordIndex + 1) / trainingWords.length) * 100}%` }}
-                />
-              </div>
-            </div>
-
             {/* Previous (السابق) — Left Side of row in RTL layout */}
             <button
               type="button"
@@ -1279,10 +1277,20 @@ export default function HomeWorkspace({
               <ChevronRight className="w-4 h-4" />
               <span>السابق</span>
             </button>
+
+            {/* Next (التالي) -> Right Side of row in RTL layout */}
+            <button
+              type="button"
+              onClick={handleNextWord}
+              className="py-3 px-5 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 shadow-md active:scale-[0.97] cursor-pointer"
+            >
+              <span>{currentWordIndex === trainingWords.length - 1 ? "اكمل لننتقل إلى المستوى التالي 🎓" : "التالي"}</span>
+              <ChevronLeft className="w-4 h-4" />
+            </button>
           </div>
 
-          {/* Guidelines hint for completion before moving forward */}
-          {!isCurrentWordFullyCompleted && (
+          {/* Guidelines hint for completion before moving forward, shown only when student attempts next and is incomplete */}
+          {showCompletionWarning && (
             <p className="text-center text-[10.5px] font-black text-rose-600 bg-rose-50/50 border border-rose-200/35 rounded-xl py-2 px-4 max-w-sm mx-auto animate-fadeIn select-none">
               ⚠️ للمتابعة اكمل جميع انواع التدريبات (سماعاً 🔊، كتابةً ✍️، نطقاً 🎙️)
             </p>
@@ -1367,9 +1375,22 @@ export default function HomeWorkspace({
                             تأسيس وبدء 🔓
                           </button>
                         ) : (
-                          <span className="bg-amber-50 border border-amber-200 text-amber-500 rounded-xl p-2 shrink-0" title="مغلق">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const idxInAll = allSortedGroups.findIndex(g => g.key === item.key);
+                              if (idxInAll > 0) {
+                                const prevGroup = allSortedGroups[idxInAll - 1];
+                                alert(`⚠️ هذه المجموعة مغلقة! يجب عليك إنهاء المجموعة السابقة "${prevGroup.group}" أولاً لتتمكن من فتحها.`);
+                              } else {
+                                alert("⚠️ هذه المجموعة مغلقة حالياً.");
+                              }
+                            }}
+                            className="bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-500 rounded-xl p-2 shrink-0 cursor-pointer active:scale-95"
+                            title="انقر لمعرفة سبب القفل"
+                          >
                             <Lock className="w-3.5 h-3.5" />
-                          </span>
+                          </button>
                         )}
                       </div>
 
@@ -1391,6 +1412,36 @@ export default function HomeWorkspace({
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 📊 STATS CARDS: COMPLETED WORDS & CURRENT SEMESTER (SQUARE BOXES NEXT TO EACH OTHER) */}
+      <div className="max-w-md mx-auto mb-6 px-3" id="completed-words-semester-counter-grid" dir="rtl">
+        <div className="grid grid-cols-2 gap-4">
+          
+          {/* Words Count Box */}
+          <div className="bg-white rounded-3xl border border-pink-100/95 hover:border-pink-200 transition-all shadow-[0_8px_30px_rgb(236,72,153,0.03)] p-4 flex flex-col items-center justify-center text-center select-none min-h-[130px]">
+            <div className="text-3xl mb-1.5 filter drop-shadow">📝</div>
+            <div className="space-y-0.5">
+              <span className="block text-[10px] font-black text-slate-400 tracking-wide">الكلمات المنجزة</span>
+              <div className="text-3xl font-extrabold font-sans text-purple-950 flex items-baseline justify-center gap-1">
+                <span>{completedWordsCount}</span>
+                <span className="text-xs text-pink-500 font-extrabold">كلمة</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Semester Box */}
+          <div className="bg-white rounded-3xl border border-sky-100/95 hover:border-sky-200 transition-all shadow-[0_8px_30px_rgb(56,189,248,0.03)] p-4 flex flex-col items-center justify-center text-center select-none min-h-[130px]">
+            <div className="text-3xl mb-1.5 filter drop-shadow">📅</div>
+            <div className="space-y-0.5">
+              <span className="block text-[10px] font-black text-slate-400 tracking-wide">الترم الدراسي</span>
+              <div className="text-sm font-black text-sky-950 leading-tight">
+                {studentSemester}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
@@ -1437,54 +1488,6 @@ export default function HomeWorkspace({
           </div>
         </div>
       )}
-
-      {/* SMART INTERNET AND ADSTERRA ADVERTISING MANAGEMENT CENTER */}
-      <div className="max-w-md mx-auto mb-6 px-3" dir="rtl">
-        <div className="bg-white rounded-3xl p-5 border border-purple-100/80 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">📡</span>
-              <div>
-                <h4 className="text-xs font-black text-slate-800">نظام إدارة الاتصال الذكي</h4>
-                <p className="text-[10px] text-slate-450 font-bold">بوابتك للتعلم والجوائز بدون حدود</p>
-              </div>
-            </div>
-            {/* Live Interactive Online status badge */}
-            <div className={`px-3 py-1 rounded-full text-[10px] font-extrabold flex items-center gap-1.5 transition-all border ${
-              isOnline 
-                ? "bg-emerald-50 border-emerald-150 text-emerald-600" 
-                : "bg-rose-50 border-rose-150 text-rose-500 animate-pulse"
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? "bg-emerald-500" : "bg-rose-500"}`} />
-              <span>{isOnline ? "متصل بالإنترنت" : "يعمل بدون اتصال (Offline)"}</span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2.5">
-            {/* Extra Time bonus trigger button */}
-            <button
-              type="button"
-              onClick={() => handlePwaAction("extra_time")}
-              className="py-3 px-4 bg-purple-50 hover:bg-purple-100/80 text-purple-700 border border-purple-150/45 rounded-2xl flex flex-col items-center justify-center text-center gap-1 transition-all active:scale-95 cursor-pointer hover:shadow-sm"
-            >
-              <span className="text-lg">⏱️</span>
-              <span className="text-xs font-black">طلب وقت إضافي</span>
-              <span className="text-[9px] text-slate-400 font-bold">(إضافة +15 دقيقة)</span>
-            </button>
-
-            {/* New Group target unlock trigger button */}
-            <button
-              type="button"
-              onClick={() => handlePwaAction("new_group")}
-              className="py-3 px-4 bg-pink-50/50 hover:bg-pink-100 text-pink-800 border border-pink-200/40 rounded-2xl flex flex-col items-center justify-center text-center gap-1 transition-all active:scale-95 cursor-pointer hover:shadow-sm"
-            >
-              <span className="text-lg">🔓</span>
-              <span className="text-xs font-black">فتح مجموعة جديدة</span>
-              <span className="text-[9px] text-slate-400 font-bold">(فيديو Adsterra سريع)</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Main Road Map Tablet Frame with elegant modern sapphire blue & white styling and clean borders */}
       <div className="bg-white rounded-[36px] shadow-[0_25px_60px_rgba(236,72,153,0.06),0_1px_3px_rgba(0,0,0,0.02)] border border-pink-100/40 p-6 max-w-md mx-auto relative overflow-hidden">
@@ -1713,58 +1716,93 @@ export default function HomeWorkspace({
                   </select>
                 </div>
 
-                {/* Group Option */}
-                <div className="space-y-1.5 text-right">
-                  <label className="text-[11px] font-bold text-purple-800 block">
-                    اختر المجموعة
+                {/* Group Option as Interactive Card-Buttons Grid */}
+                <div className="space-y-2 text-right">
+                  <label className="text-[11px] font-black text-purple-900 block">
+                    اختر المجموعة للتعلم والتدريب
                   </label>
-                  <select
-                    value={modalGroup}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) {
-                        setModalGroup("");
-                        return;
-                      }
-                      
-                      const groupKey = `${selectedLevel.number}_${modalSemester}_${val}`;
-                      if (!isGroupSequenceUnlocked(groupKey)) {
-                        // Request connection test to unlock
-                        handlePwaAction("new_group", groupKey);
-                        setModalGroup("");
-                        return;
-                      }
+                  {!modalSemester ? (
+                    <div className="text-center p-4 bg-slate-50 border border-dashed border-slate-200 rounded-2xl text-[11px] text-slate-400 font-bold">
+                      ⚠️ يرجى اختيار الترم/الفصل الدراسي لعرد المجموعات
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1" id="modal-groups-scroll-container">
+                      {uniqueGroupsInModal.map((grp, idx) => {
+                        const groupKey = `${selectedLevel.number}_${modalSemester}_${grp}`;
+                        const isUnlocked = isGroupSequenceUnlocked(groupKey);
+                        const isCompleted = completedGroups.includes(groupKey);
+                        
+                        // Student's active group is the first unlocked group that is NOT completed (or falls back to matching first unlocked)
+                        const isActiveFrontier = isUnlocked && !isCompleted && 
+                          uniqueGroupsInModal.findIndex(g => {
+                            const gk = `${selectedLevel.number}_${modalSemester}_${g}`;
+                            return isGroupSequenceUnlocked(gk) && !completedGroups.includes(gk);
+                          }) === idx;
 
-                      setModalGroup(val);
-                      if (modalSemester && val) {
-                        // Automatically enter training immediately once both are picked!
-                        setActiveTrainingLevel(selectedLevel);
-                        setActiveTrainingSemester(modalSemester);
-                        setActiveTrainingGroup(val);
-                        setCurrentWordIndex(0);
-                        setSelectedLevel(null);
-                      }
-                    }}
-                    disabled={!modalSemester}
-                    className="w-full bg-white text-xs font-bold text-slate-850 border border-slate-200/80 rounded-xl p-3 focus:outline-none focus:border-purple-500 cursor-pointer text-right shadow-sm disabled:opacity-50 disabled:bg-slate-100/85 disabled:cursor-not-allowed hover:bg-slate-50/50 transition-all font-sans"
-                  >
-                    {!modalSemester ? (
-                      <option value="">-- اختر الترم أولاً --</option>
-                    ) : (
-                      <>
-                        <option value="">-- اختر المجموعة --</option>
-                        {uniqueGroupsInModal.map(grp => {
-                          const groupKey = `${selectedLevel.number}_${modalSemester}_${grp}`;
-                          const isUnlocked = isGroupSequenceUnlocked(groupKey);
-                          return (
-                            <option key={grp} value={grp}>
-                              {grp} {isUnlocked ? " 🔓 (مفتوحة)" : " 🔒 (مقفلة)"}
-                            </option>
-                          );
-                        })}
-                      </>
-                    )}
-                  </select>
+                        return (
+                          <button
+                            key={grp}
+                            type="button"
+                            onClick={() => {
+                              if (!isUnlocked) {
+                                const idxInAll = allSortedGroups.findIndex(g => g.key === groupKey);
+                                if (idxInAll > 0) {
+                                  const prevGroup = allSortedGroups[idxInAll - 1];
+                                  alert(`⚠️ هذه المجموعة مغلقة! يجب عليك إنهاء المجموعة السابقة "${prevGroup.group}" أولاً لتتمكن من فتحها.`);
+                                } else {
+                                  alert("⚠️ هذه المجموعة مغلقة حالياً.");
+                                }
+                                return;
+                              }
+                              setModalGroup(grp);
+                              setActiveTrainingLevel(selectedLevel);
+                              setActiveTrainingSemester(modalSemester);
+                              setActiveTrainingGroup(grp);
+                              setCurrentWordIndex(0);
+                              setSelectedLevel(null);
+                            }}
+                            className={`w-full text-right p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 relative ${
+                              isActiveFrontier
+                                ? "bg-purple-50/95 border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.3)] ring-2 ring-purple-400 ring-offset-1"
+                                : isCompleted
+                                ? "bg-pink-50/60 border-pink-100 text-pink-700 hover:bg-pink-100/50"
+                                : isUnlocked
+                                ? "bg-white border-slate-200 hover:border-purple-300 hover:bg-purple-50/10 text-slate-800"
+                                : "bg-slate-50/80 border-slate-200/50 text-slate-400 opacity-80"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">
+                                {isCompleted ? "✅" : isUnlocked ? "🎯" : "🔒"}
+                              </span>
+                              <div className="flex flex-col text-right">
+                                <span className={`text-xs font-black ${isActiveFrontier ? "text-purple-950" : ""}`}>
+                                  {grp}
+                                </span>
+                                {isActiveFrontier && (
+                                  <span className="text-[9px] text-purple-700 font-extrabold animate-pulse flex items-center gap-1 mt-0.5">
+                                    <span>●</span> مجموعتك النشطة حالياً
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {isCompleted ? (
+                                <span className="text-[9px] bg-pink-100 text-pink-800 font-black px-2 py-0.5 rounded-full border border-pink-200">مكتملة ✨</span>
+                              ) : isUnlocked ? (
+                                <span className="text-[9px] bg-purple-100 text-purple-800 font-black px-2 py-0.5 rounded-full border border-purple-250/20">دخول ⚡</span>
+                              ) : (
+                                <span className="text-[9px] bg-slate-100 text-slate-500 font-black px-2 py-0.5 rounded-full border border-slate-200">
+                                  🔒 مغلقة
+                                </span>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
 

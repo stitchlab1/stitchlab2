@@ -65,6 +65,12 @@ export default function FlashcardsPanel({
   filteredFlashcards,
   speakText
 }: FlashcardsPanelProps) {
+  const [visibleCount, setVisibleCount] = React.useState<number>(6);
+
+  React.useEffect(() => {
+    setVisibleCount(6);
+  }, [flashcardSearch, flashcardLevelFilter]);
+
   return (
     <div className="space-y-6 text-right leading-relaxed animate-fadeIn" dir="rtl">
       
@@ -128,85 +134,99 @@ export default function FlashcardsPanel({
           <p className="text-[10px] text-slate-500">جرب البحث بكلمة مغايرة أو اضغط على زر "اصنع بطاقة" لإدراج مرادف جديد خاص بك.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredFlashcards.map((card) => {
-            const isCustom = card.id.startsWith("custom-");
+        <div className="space-y-6" id="flashcards-lazy-container">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredFlashcards.slice(0, visibleCount).map((card) => {
+              const isCustom = card.id.startsWith("custom-");
 
-            return (
-              <div
-                key={card.id}
-                className="glass-card-dark p-5 flex flex-col justify-between min-h-[220px] shadow-sm relative hover:shadow-md transition-all font-sans"
-              >
-                
-                {/* Word specs */}
-                <div className="space-y-2">
-                  <div className="flex justify-between items-start gap-2 text-left" dir="ltr">
-                    <span className={`text-[8px] font-mono tracking-wider font-extrabold px-1.5 py-0.2 rounded ${
-                      card.level === "Beginner" 
-                        ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                        : card.level === "Intermediate"
-                        ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                        : "bg-pink-500/10 text-pink-400 border border-pink-500/20"
-                    }`}>
-                      {card.level}
-                    </span>
+              return (
+                <div
+                  key={card.id}
+                  className="glass-card-dark p-5 flex flex-col justify-between min-h-[220px] shadow-sm relative hover:shadow-md transition-all font-sans"
+                >
+                  
+                  {/* Word specs */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-start gap-2 text-left" dir="ltr">
+                      <span className={`text-[8px] font-mono tracking-wider font-extrabold px-1.5 py-0.2 rounded ${
+                        card.level === "Beginner" 
+                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                          : card.level === "Intermediate"
+                          ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                          : "bg-pink-500/10 text-pink-400 border border-pink-500/20"
+                      }`}>
+                        {card.level}
+                      </span>
 
-                    {isCustom && (
+                      {isCustom && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteFlashcard(card.id)}
+                          className="text-slate-500 hover:text-rose-400 transition-colors p-1"
+                          title="حذف هذه البطاقة المضافة"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between text-left">
+                      <h4 className="text-lg font-black tracking-wide text-white select-all">
+                        {card.word}
+                      </h4>
                       <button
                         type="button"
-                        onClick={() => onDeleteFlashcard(card.id)}
-                        className="text-slate-500 hover:text-rose-400 transition-colors p-1"
-                        title="حذف هذه البطاقة المضافة"
+                        onClick={() => speakText(card.word)}
+                        className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white flex items-center justify-center text-xs transition-colors"
+                        title="استمع لنطق الكلمة"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Volume2 className="w-4 h-4" />
                       </button>
-                    )}
+                    </div>
+
+                    <p className="text-[10px] text-slate-400 font-mono italic select-all text-left" dir="ltr">{card.ipa}</p>
+
+                    <p className="text-xs pt-1.5 font-bold select-all text-right text-indigo-300" dir="rtl">
+                      المعنى: {card.meaning}
+                    </p>
                   </div>
 
-                  <div className="flex items-center justify-between text-left">
-                    <h4 className="text-lg font-black tracking-wide text-white select-all">
-                      {card.word}
-                    </h4>
-                    <button
-                      type="button"
-                      onClick={() => speakText(card.word)}
-                      className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white flex items-center justify-center text-xs transition-colors"
-                      title="استمع لنطق الكلمة"
-                    >
-                      <Volume2 className="w-4 h-4" />
-                    </button>
+                  {/* Example box segment */}
+                  <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850/80 leading-normal space-y-1.5 text-left mt-4" dir="ltr">
+                    <div className="flex justify-between items-center text-[8px] text-slate-500 border-b border-slate-900 pb-1">
+                      <span>EXAMPLE USE CASE:</span>
+                      <button
+                        type="button"
+                        onClick={() => speakText(card.example)}
+                        className="text-slate-400 hover:text-white underline text-[8px]"
+                      >
+                        انطق الجملة الكاملة
+                      </button>
+                    </div>
+                    <p className="text-[11px] font-sans font-semibold italic text-slate-200 select-all leading-relaxed">
+                      "{card.example}"
+                    </p>
+                    <p className="text-[10px] text-slate-450 font-sans text-right leading-relaxed border-t border-slate-900 pt-1 font-medium" dir="rtl">
+                      ترجمة المثال: {card.exampleTranslation}
+                    </p>
                   </div>
 
-                  <p className="text-[10px] text-slate-400 font-mono italic select-all text-left" dir="ltr">{card.ipa}</p>
-
-                  <p className="text-xs pt-1.5 font-bold select-all text-right text-indigo-300" dir="rtl">
-                    المعنى: {card.meaning}
-                  </p>
                 </div>
+              );
+            })}
+          </div>
 
-                {/* Example box segment */}
-                <div className="bg-slate-950 p-3 rounded-2xl border border-slate-850/80 leading-normal space-y-1.5 text-left mt-4" dir="ltr">
-                  <div className="flex justify-between items-center text-[8px] text-slate-500 border-b border-slate-900 pb-1">
-                    <span>EXAMPLE USE CASE:</span>
-                    <button
-                      type="button"
-                      onClick={() => speakText(card.example)}
-                      className="text-slate-400 hover:text-white underline text-[8px]"
-                    >
-                      انطق الجملة الكاملة
-                    </button>
-                  </div>
-                  <p className="text-[11px] font-sans font-semibold italic text-slate-200 select-all leading-relaxed">
-                    "{card.example}"
-                  </p>
-                  <p className="text-[10px] text-slate-450 font-sans text-right leading-relaxed border-t border-slate-900 pt-1 font-medium" dir="rtl">
-                    ترجمة المثال: {card.exampleTranslation}
-                  </p>
-                </div>
-
-              </div>
-            );
-          })}
+          {filteredFlashcards.length > visibleCount && (
+            <div className="flex justify-center pt-2" id="flashcards-lazy-load-container">
+              <button
+                type="button"
+                onClick={() => setVisibleCount((prev) => prev + 6)}
+                className="px-6 py-2.5 bg-indigo-950/40 hover:bg-indigo-900/50 text-indigo-300 hover:text-indigo-200 border border-indigo-500/20 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              >
+                <span>➕ تحميل المزيد من بطاقات المفردات (On-Demand ⚡)</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { Timer, Play, Pause, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Timer, ChevronRight } from "lucide-react";
 
-export default function LearningTimer() {
+interface LearningTimerProps {
+  isLoggedIn: boolean;
+}
+
+export default function LearningTimer({ isLoggedIn }: LearningTimerProps) {
   const [seconds, setSeconds] = useState<number>(0);
-  const [isActive, setIsActive] = useState<boolean>(true);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
 
   // Load initial value from localStorage if it exists, or start fresh
@@ -14,10 +17,10 @@ export default function LearningTimer() {
     }
   }, []);
 
-  // Update timer every second if active
+  // Update timer every second only if student is logged in
   useEffect(() => {
     let interval: any = null;
-    if (isActive) {
+    if (isLoggedIn) {
       interval = setInterval(() => {
         setSeconds((prev) => {
           const next = prev + 1;
@@ -29,7 +32,7 @@ export default function LearningTimer() {
       clearInterval(interval);
     }
     return () => clearInterval(interval);
-  }, [isActive]);
+  }, [isLoggedIn]);
 
   // Format time as HH:MM:SS
   const formatTime = (totalSecs: number): string => {
@@ -39,11 +42,6 @@ export default function LearningTimer() {
 
     const pad = (num: number) => num.toString().padStart(2, "0");
     return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
-  };
-
-  const handleReset = () => {
-    setSeconds(0);
-    localStorage.setItem("stitchlab_learning_timer_seconds", "0");
   };
 
   return (
@@ -84,36 +82,6 @@ export default function LearningTimer() {
             <span className="text-sm font-extrabold text-slate-800 font-mono tracking-wider mt-0.5 select-all">
               {formatTime(seconds)}
             </span>
-          </div>
-
-          {/* Vertical divider */}
-          <div className="h-6 w-[1px] bg-pink-100"></div>
-
-          {/* Controls */}
-          <div className="flex items-center gap-1.5">
-            {/* Play / Pause toggle */}
-            <button
-              type="button"
-              onClick={() => setIsActive(!isActive)}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                isActive 
-                  ? "bg-amber-50 hover:bg-amber-100 text-amber-600" 
-                  : "bg-emerald-50 hover:bg-emerald-100 text-emerald-600"
-              }`}
-              title={isActive ? "إيقاف مؤقت" : "بدء التشغيل"}
-            >
-              {isActive ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-            </button>
-
-            {/* Reset button */}
-            <button
-              type="button"
-              onClick={handleReset}
-              className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-              title="إعادة تعيين المؤقت"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
           </div>
         </div>
       )}
