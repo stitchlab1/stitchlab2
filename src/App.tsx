@@ -100,10 +100,13 @@ export default function App() {
     };
   }, []);
 
+  // Save feedback state for snackbar
+  const [saveStatus, setSaveStatus] = useState<{ show: boolean; success: boolean; message: string } | null>(null);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2500); // 2.5 seconds
+    }, 10000); // 10 seconds (شاشة ترحيبية بيضاء لمدة 10 ثوان)
     return () => clearTimeout(timer);
   }, []);
 
@@ -558,7 +561,10 @@ export default function App() {
     const uid = auth.currentUser.uid;
     const studentRef = doc(db, "students", uid);
     try {
-      await updateDoc(studentRef, {
+      await setDoc(studentRef, {
+        uid: uid,
+        email: auth.currentUser.email || "",
+        name: currentUser?.name || auth.currentUser.displayName || "طالب مميز",
         level: userLevel,
         points: points,
         unlockedLevel: unlockedLevel,
@@ -572,17 +578,31 @@ export default function App() {
         completedWordsCount: completedWordsCount,
         studentSemester: studentSemester,
         updatedAt: serverTimestamp()
-      });
+      }, { merge: true });
+      
       setHasUnsavedChanges(false);
       console.log("StitchLab data saved successfully to Firestore.");
+      
       if (!silent) {
+        setSaveStatus({
+          show: true,
+          success: true,
+          message: "🎉 تم حفظ تقدمك الدراسي ونقاطك بنجاح في السحابة ومزامنتها!"
+        });
+        // Auto-dismiss the snackbar after 4 seconds
+        setTimeout(() => {
+          setSaveStatus(prev => prev?.success ? null : prev);
+        }, 4000);
         try { playAudioFeedback(true); } catch(e) {}
-        alert("🎉 تم حفظ جميع التغييرات وتقدمك الحالي بنجاح في السحابة! تم توفير القراءات والاقتصار على مزامنتك الذكية. ⚡☁️");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Save progress failed:", err);
       if (!silent) {
-        alert("⚠️ فشل في حفظ البيانات السحابية. يرجى التحقق من اتصال الإنترنت وحاول مجدداً.");
+        setSaveStatus({
+          show: true,
+          success: false,
+          message: `⚠️ فشل في حفظ البيانات السحابية: ${err.message || err}`
+        });
       }
     } finally {
       setIsSyncing(false);
@@ -1260,11 +1280,26 @@ export default function App() {
 
 
 
-                    {/* Semester box */}
-                    <div className="flex items-center gap-1 bg-sky-50 border border-sky-100 text-sky-700 px-2.5 py-1 rounded-full text-xs font-black shadow-sm" id="student-header-semester">
-                      <span>📅</span>
-                      <span>الترم: {studentSemester}</span>
-                    </div>
+                    {/* Cloud Save Button */}
+                    <button
+                      type="button"
+                      onClick={() => saveProgressToFirestore(false)}
+                      disabled={isSyncing}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-extrabold text-xs py-1.5 px-3.5 rounded-full border border-purple-700 hover:shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1 shadow-sm"
+                      id="save-progress-header-btn"
+                    >
+                      {isSyncing ? (
+                        <>
+                          <span className="w-3 h-3 rounded-full border-2 border-white border-t-transparent animate-spin inline-block"></span>
+                          <span>جاري الحفظ...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>☁️</span>
+                          <span>حفظ التقدم</span>
+                        </>
+                      )}
+                    </button>
                     
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
                       <span className="text-xs font-black">الطالب: {currentUser?.name || "طالب مميز"}</span>
