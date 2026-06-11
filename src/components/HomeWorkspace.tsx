@@ -30,6 +30,8 @@ interface HomeWorkspaceProps {
   extraAdClaimsCount: number;
   unlockedAdvertiserGroups: string[];
   onUnlockGroup: (groupKey: string) => void;
+  completedGroupsProp?: string[];
+  setCompletedGroupsProp?: React.Dispatch<React.SetStateAction<string[]>>;
 }
 
 interface SheetWord {
@@ -366,7 +368,9 @@ export default function HomeWorkspace({
   dailySecondsLeft,
   extraAdClaimsCount,
   unlockedAdvertiserGroups,
-  onUnlockGroup
+  onUnlockGroup,
+  completedGroupsProp,
+  setCompletedGroupsProp
 }: HomeWorkspaceProps) {
   const [sheetWords, setSheetWords] = useState<SheetWord[]>(() => {
     const saved = localStorage.getItem("stitchlab_sheet_words");
@@ -474,7 +478,7 @@ export default function HomeWorkspace({
     setShowInstallBanner(false);
   };
 
-  const [completedGroups, setCompletedGroups] = useState<string[]>(() => {
+  const [completedGroupsLocal, setCompletedGroupsLocal] = useState<string[]>(() => {
     const saved = localStorage.getItem("stitchlab_completed_groups");
     try {
       return saved ? JSON.parse(saved) : [];
@@ -482,6 +486,24 @@ export default function HomeWorkspace({
       return [];
     }
   });
+
+  const completedGroups = completedGroupsProp !== undefined ? completedGroupsProp : completedGroupsLocal;
+  
+  const setCompletedGroups = (newVal: string[] | ((prev: string[]) => string[])) => {
+    if (setCompletedGroupsProp) {
+      if (typeof newVal === "function") {
+        setCompletedGroupsProp(newVal);
+      } else {
+        setCompletedGroupsProp(newVal);
+      }
+    } else {
+      if (typeof newVal === "function") {
+        setCompletedGroupsLocal(newVal as any);
+      } else {
+        setCompletedGroupsLocal(newVal);
+      }
+    }
+  };
 
   const allSortedGroups = useMemo(() => {
     const uniqueCombosMap = new Map<string, { level: number; semester: string; group: string; key: string }>();

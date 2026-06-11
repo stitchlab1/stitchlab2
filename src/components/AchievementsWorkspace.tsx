@@ -29,6 +29,8 @@ interface AchievementsWorkspaceProps {
   DAILY_QUOTES: DailyQuote[];
   quoteIndex: number;
   setQuoteIndex: React.Dispatch<React.SetStateAction<number>>;
+  completedGroupsProp?: string[];
+  analyzedCountProp?: number;
 }
 
 export default function AchievementsWorkspace({
@@ -41,23 +43,28 @@ export default function AchievementsWorkspace({
   onResetProgress,
   DAILY_QUOTES,
   quoteIndex,
-  setQuoteIndex
+  setQuoteIndex,
+  completedGroupsProp,
+  analyzedCountProp
 }: AchievementsWorkspaceProps) {
   
-  // Load supporting states from localStorage for advanced metrics
+  // Load supporting states with prop priority, falling back manually to localStorage
   const completedGroups = React.useMemo(() => {
+    if (completedGroupsProp !== undefined) return completedGroupsProp;
     try {
       const saved = localStorage.getItem("stitchlab_completed_groups");
       return saved ? JSON.parse(saved) : [];
     } catch (e) {
       return [];
     }
-  }, []);
+  }, [completedGroupsProp]);
 
   const analyzedCount = React.useMemo(() => {
+    if (analyzedCountProp !== undefined) return analyzedCountProp;
     const val = localStorage.getItem("stitchlab_analyzed_count");
     return val ? parseInt(val, 10) : 0;
-  }, []);
+  }, [analyzedCountProp]);
+
 
   const customCardsCount = React.useMemo(() => {
     try {

@@ -1,0 +1,36 @@
+{
+  "entities": {
+    "student": {
+      "title": "Student Progress",
+      "description": "Represents a student's learning progress, levels, points, custom cards, vocabulary, quiz attempts, and statistics.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase user ID" },
+        "email": { "type": "string", "description": "Student email address" },
+        "name": { "type": "string", "description": "Student display name" },
+        "level": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced"], "description": "Selected English learning level" },
+        "points": { "type": "integer", "description": "Learning points score accumulated" },
+        "unlockedLevel": { "type": "integer", "description": "Unlocks level number (1 to 9)" },
+        "completedLevels": { "type": "array", "description": "List of completed level numbers" },
+        "completedGroups": { "type": "array", "description": "List of completed vocabulary card group keys" },
+        "customFlashcards": { "type": "array", "description": "List of custom flashcards created by the student" },
+        "conversationsHad": { "type": "integer", "description": "Count of AI persona conversations" },
+        "quizScore": { "type": "integer", "description": "Best score in quiz" },
+        "quizAttempts": { "type": "integer", "description": "Count of quiz attempts" },
+        "analyzedCount": { "type": "integer", "description": "Sentence analyses count" },
+        "visitDates": { "type": "array", "description": "Dates the student logged in for streak calculation" },
+        "unlockedAdvertiserGroups": { "type": "array", "description": "Ad gate unlocked publisher keys" },
+        "dailySecondsLeft": { "type": "integer", "description": "Timer seconds remaining in session" },
+        "extraAdClaimsCount": { "type": "integer", "description": "Count of ad claims done today" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last modification" }
+      },
+      "required": ["uid", "email", "name", "level", "points"]
+    }
+  },
+  "firestore": {
+    "students/{studentId}": {
+      "schema": "student",
+      "description": "User student record by the student document ID (Firebase Auth UID)."
+    }
+  }
+}
