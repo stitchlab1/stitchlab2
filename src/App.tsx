@@ -501,6 +501,7 @@ export default function App() {
 
   // Local-First Sync-Code packager (Zero server costs)
   const saveProgressToFirestore = async (silent = false) => {
+    console.log("Button clicked: saveProgressToFirestore started", { silent });
     if (!isLoggedIn || !auth.currentUser) {
       if (!silent) {
         alert("⚠️ يرجى تسجيل الدخول أولاً بحساب Google الخاص بك لتتمكن من توليد كود مزامنة وحفظ تقدمك.");
@@ -1409,7 +1410,10 @@ export default function App() {
                     {/* Local Sync Mode Button */}
                     <button
                       type="button"
-                      onClick={() => setShowSyncModal(true)}
+                      onClick={() => {
+                        console.log("Button clicked: Show Sync Modal (كود المزامنة)");
+                        setShowSyncModal(true);
+                      }}
                       className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs py-1.5 px-3.5 rounded-full border border-purple-700 hover:shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-sm"
                       id="save-progress-header-btn"
                     >
@@ -1835,7 +1839,10 @@ export default function App() {
               <button
                 type="button"
                 disabled={isSyncing}
-                onClick={() => saveProgressToFirestore(false)}
+                onClick={() => {
+                  console.log("Button clicked: Generate new sync code inside modal");
+                  saveProgressToFirestore(false);
+                }}
                 className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-black text-xs py-2.5 px-4 rounded-xl active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
               >
                 {isSyncing ? "🔄 جاري معالجة السحابة وتوليد الكود..." : "🔄 قم بتوليد كود مزامنة جديد"}
@@ -1892,6 +1899,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={async () => {
+                    console.log("Button clicked: Verify sync code clicked (استعادة)", { syncInputCode });
                     if (!syncInputCode || syncInputCode.length !== 6) {
                       alert("⚠️ يرجى إدخال رمز المزامنة المكون من 6 أرقام بالكامل.");
                       return;

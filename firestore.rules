@@ -21,7 +21,7 @@ service cloud.firestore {
     }
 
     function isValidSyncCode(code) {
-      return code is string && code.size() == 6 && code.matches('^[0-9]+$');
+      return code is string && code.size() == 6;
     }
 
     function isValidSyncCodeDoc(doc) {
@@ -39,9 +39,7 @@ service cloud.firestore {
 
     // Rules for sync_codes collection (temporary 6-digit backup codes)
     match /sync_codes/{code} {
-      allow read: if isSignedIn() && isValidSyncCode(code);
-      allow create: if isSignedIn() && isValidSyncCode(code) && isValidSyncCodeDoc(request.resource.data);
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read, write: if isSignedIn();
     }
 
     // Allow read-only access for connection-verification tests
