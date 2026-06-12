@@ -1,15 +1,52 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Global Safety Net
+
+    // Global Safety Net (Default Deny)
     match /{document=**} {
       allow read, write: if false;
     }
 
+    // Hardened architectural security helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]+$');
+    }
+
+    function isValidSyncCode(code) {
+      return code is string && code.size() == 6 && code.matches('^[0-9]+$');
+    }
+
+    function isValidSyncCodeDoc(doc) {
+      return doc.keys().hasAll(['payload', 'userId', 'createdAt'])
+        && doc.keys().size() == 3
+        && doc.userId is string
+        && doc.userId == request.auth.uid
+        && doc.createdAt == request.time;
+    }
+
     // Rules for students collection
     match /students/{studentId} {
-      allow read, write: if request.auth != null && request.auth.uid == studentId;
+      allow read, write: if isOwner(studentId);
+    }
+
+    // Rules for sync_codes collection (temporary 6-digit backup codes)
+    match /sync_codes/{code} {
+      allow read: if isSignedIn() && isValidSyncCode(code);
+      allow create: if isSignedIn() && isValidSyncCode(code) && isValidSyncCodeDoc(request.resource.data);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Allow read-only access for connection-verification tests
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

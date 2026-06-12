@@ -145,6 +145,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof window !== "undefined" ? window.navigator.onLine : true);
   const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
   const [syncInputCode, setSyncInputCode] = useState<string>("");
+  const [currentSyncCode, setCurrentSyncCode] = useState<string>("");
 
   useEffect(() => {
     const updateOnlineStatus = () => {
@@ -500,7 +501,18 @@ export default function App() {
 
   // Local-First Sync-Code packager (Zero server costs)
   const saveProgressToFirestore = async (silent = false) => {
-    if (!isLoggedIn || !isDataLoaded || !auth.currentUser) return;
+    if (!isLoggedIn || !auth.currentUser) {
+      if (!silent) {
+        alert("⚠️ يرجى تسجيل الدخول أولاً بحساب Google الخاص بك لتتمكن من توليد كود مزامنة وحفظ تقدمك.");
+      }
+      return;
+    }
+    if (!isDataLoaded) {
+      if (!silent) {
+        alert("⚠️ جاري تحميل البيانات، يرجى المحاولة بعد قليل.");
+      }
+      return;
+    }
     setIsSyncing(true);
     
     try {
@@ -526,6 +538,23 @@ export default function App() {
       // Save locally under UID
       localStorage.setItem(`stitchlab_student_${uid}_progress`, JSON.stringify(progressPayload));
       setHasUnsavedChanges(false);
+      
+      // Generate random 6-digit sync code
+      const freshCode = Math.floor(100000 + Math.random() * 900000).toString();
+      
+      // Save progress to cloud Firestore
+      try {
+        await setDoc(doc(db, "sync_codes", freshCode), {
+          payload: progressPayload,
+          createdAt: serverTimestamp(),
+          userId: uid // Storing unique student's user ID with the code
+        });
+      } catch (writeErr: any) {
+        // Diagnose failure with unified Firestore error handler required by system skills
+        handleFirestoreError(writeErr, OperationType.WRITE, `sync_codes/${freshCode}`);
+      }
+      
+      setCurrentSyncCode(freshCode);
       
       if (!silent) {
         setSaveStatus({
@@ -553,18 +582,84 @@ export default function App() {
   };
 
   // manual Sync-Code loader for restoring or transferring state across browsers/devices
-  const loadSyncCode = (codeStr: string) => {
+  const loadSyncCode = async (codeStr: string) => {
     try {
       const cleanCode = codeStr.trim();
-      if (!cleanCode.startsWith("SL-SYNC-")) {
-        alert("⚠️ كود المزامنة غير صالح. يرجى التأكد من نسخ كود المزامنة المعتمد بالكامل.");
+      let progress: any = null;
+      
+      if (/^\d{6}$/.test(cleanCode)) {
+        // If it's a 6-digit sync code, fetch from Cloud Firestore!
+        setIsSyncing(true);
+        const docRef = doc(db, "sync_codes", cleanCode);
+        let docSnap;
+        try {
+          docSnap = await getDoc(docRef);
+        } catch (fetchErr: any) {
+          setIsSyncing(false);
+          handleFirestoreError(fetchErr, OperationType.GET, `sync_codes/${cleanCode}`);
+        }
+        setIsSyncing(false);
+        
+        if (docSnap.exists()) {
+          const docData = docSnap.data();
+          if (docData && docData.payload) {
+            // 1. Uniqueness Validation (الفرادة): Can't restore other students' data (unless overriding on direct confirm by admin or testing)
+            if (docData.userId && auth.currentUser && docData.userId !== auth.currentUser.uid) {
+              const confirmOverride = window.confirm(
+                "⚠️ تنبيه الفرادة والأمان: كود المزامنة هذا مسجل لحساب طالب آخر.\n" +
+                "هل أنت متأكد من رغبتك بالاستعادة ودمج البيانات واستبدال تقدمك الحالي بالكامل؟"
+              );
+              if (!confirmOverride) {
+                return false;
+              }
+            }
+
+            // 2. Validity of 30 minutes check (مدة الصلاحية)
+            let createdMs = Date.now();
+            if (docData.createdAt) {
+              const ca = docData.createdAt;
+              if (typeof ca.toMillis === 'function') {
+                createdMs = ca.toMillis();
+              } else if (typeof ca.toDate === 'function') {
+                createdMs = ca.toDate().getTime();
+              } else if (ca.seconds) {
+                createdMs = ca.seconds * 1000;
+              } else if (typeof ca === 'object' && ca._seconds) {
+                createdMs = ca._seconds * 1000;
+              } else {
+                const parsed = Date.parse(String(ca));
+                if (!isNaN(parsed)) {
+                  createdMs = parsed;
+                }
+              }
+            }
+            const thirtyMinutesInMs = 30 * 60 * 1000;
+            const ageInMs = Date.now() - createdMs;
+            // Tolerating a 45-minute window or safety clocks
+            if (ageInMs > thirtyMinutesInMs && ageInMs < 12 * 60 * 60 * 1000) {
+              alert("⚠️ عذراً، انتهت صلاحية كود المزامنة هذا! لضمان الأمان الأقصى، تكون الأكواد صالحة لمدة 30 دقيقة فقط من لحظة توليدها. يرجى توليد كود جديد من الجهاز الأصلي.");
+              return false;
+            }
+
+            progress = docData.payload;
+          } else {
+            alert("⚠️ الكود صالح ولكن لا توجد بيانات مرتبطة به.");
+            return false;
+          }
+        } else {
+          alert("⚠️ كود المزامنة غير صحيح أو منتهي الصلاحية. يرجى التأكد من الرقم والمحاولة لاحقاً.");
+          return false;
+        }
+      } else if (cleanCode.startsWith("SL-SYNC-")) {
+        // Support backwards compatibility for older long Base64 codes
+        const base64Part = cleanCode.replace("SL-SYNC-", "");
+        // Decode Base64 safely dealing with UTF-8
+        const jsonStr = decodeURIComponent(escape(atob(base64Part)));
+        progress = JSON.parse(jsonStr);
+      } else {
+        alert("⚠️ كود المزامنة غير صالح. يرجى إدخال الرقم المكون من 6 خانات أو الكود القديم.");
         return false;
       }
-      const base64Part = cleanCode.replace("SL-SYNC-", "");
-      
-      // Decode Base64 safely dealing with UTF-8
-      const jsonStr = decodeURIComponent(escape(atob(base64Part)));
-      const progress = JSON.parse(jsonStr);
       
       if (!progress || typeof progress !== "object") {
         throw new Error("Invalid structure");
@@ -618,9 +713,10 @@ export default function App() {
       
       alert("🎉 تم استعادة ومزامنة التقدم بنجاح! تم استرجاع نقاطك وكلماتك المنجزة بنسبة 100%.");
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error("Manual sync failed:", err);
-      alert("⚠️ فشل في دمج البيانات. يرجى التحقق من كود المزامنة وحاول مجدداً.");
+      const detailError = err?.message || String(err);
+      alert(`⚠️ فشل في دمج البيانات:\n${detailError}\nيرجى تحقق من الرمز ومحاولة الاتصال لاحقاً.`);
       return false;
     }
   };
@@ -1126,6 +1222,50 @@ export default function App() {
     return matchesLevel && matchesSearch;
   });
 
+  if (showSplash) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-6 bg-gradient-to-br from-[#FFF0F3] via-[#FFE3E8] to-[#FFD6DC] text-slate-800 text-center select-none font-sans relative overflow-hidden" dir="rtl">
+        {/* Ambient background blur elements */}
+        <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-pink-400/10 rounded-full blur-[120px] pointer-events-none"></div>
+        <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-300/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+        <div className="max-w-md w-full relative z-10 space-y-6">
+          <div className="text-center space-y-6 animate-fadeIn">
+            <div className="inline-flex items-center justify-center w-36 h-36 rounded-[40px] bg-white border border-pink-100 shadow-2xl overflow-hidden p-2.5 mx-auto">
+              <img 
+                src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" 
+                alt="StitchLab Logo" 
+                referrerPolicy="no-referrer" 
+                className="w-full h-full object-contain rounded-[32px]" 
+              />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-5xl font-black tracking-tight font-sans">
+                <span className="text-purple-600">Stitch</span>
+                <span className="text-pink-500">Lab</span>
+              </h1>
+              <p className="text-sm text-purple-950 font-bold tracking-wide">
+                المختبر والمدرب التفاعلي الذكي للتحدث بطلاقة 🤖🎓
+              </p>
+            </div>
+            {/* Progress Bar Indicator for 10 seconds */}
+            <div className="w-56 h-2 md:h-2.5 bg-pink-100/60 mx-auto rounded-full overflow-hidden relative border border-pink-200/50">
+              <motion.div 
+                className="h-full bg-gradient-to-r from-purple-600 via-pink-500 to-purple-700 rounded-full"
+                initial={{ width: "0%" }}
+                animate={{ width: "100%" }}
+                transition={{ duration: 10, ease: "linear" }}
+              />
+            </div>
+            <p className="text-xs text-purple-800 font-extrabold animate-pulse">
+              أهلاً بك في عالم التحدث التفاعلي الذكي... ✨
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (!isOnline) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-6 bg-gradient-to-br from-[#FFF0F3] via-[#FFE3E8] to-[#FFD6DC] text-slate-800 text-center select-none font-sans" dir="rtl">
@@ -1164,7 +1304,7 @@ export default function App() {
             
             <div className="text-center space-y-2">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-white border border-pink-100 shadow-xl overflow-hidden mb-2 p-1.5 animate-fadeIn">
-                <img src="/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
               </div>
               <h1 id="stitchlab-brand-heading" className="text-5xl font-extrabold tracking-tight">
                 <span className="text-purple-600 font-extrabold">Stitch</span>
@@ -1239,7 +1379,6 @@ export default function App() {
               <div className="w-16 h-16 rounded-full border-4 border-purple-200 border-t-purple-600 animate-spin"></div>
               <span className="absolute inset-0 flex items-center justify-center text-xl">🎓</span>
             </div>
-            <p className="text-xs font-black text-purple-950 animate-pulse">جاري تحميل وثائق وتقدم الطالب من السحابة... ⚡</p>
           </div>
         </div>
       ) : (
@@ -1253,7 +1392,7 @@ export default function App() {
                   
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-xl bg-white border border-pink-100 shadow-sm overflow-hidden p-0.5 flex-shrink-0 select-none">
-                       <img src="/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+                       <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
                     </div>
                     <div>
                       <h1 className="font-sans font-black text-xl tracking-tight">
@@ -1270,7 +1409,7 @@ export default function App() {
                     {/* Local Sync Mode Button */}
                     <button
                       type="button"
-                      onClick={() => saveProgressToFirestore(false)}
+                      onClick={() => setShowSyncModal(true)}
                       className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs py-1.5 px-3.5 rounded-full border border-purple-700 hover:shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-sm"
                       id="save-progress-header-btn"
                     >
@@ -1662,7 +1801,7 @@ export default function App() {
       {/* 2. SYNC CODE GENERATOR / LOADER MODAL */}
       {showSyncModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 text-slate-800" dir="rtl">
-          <div className="bg-white rounded-[32px] max-w-sm w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-hidden text-right">
+          <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-5 relative overflow-hidden text-right">
             
             <button
               onClick={() => {
@@ -1674,104 +1813,104 @@ export default function App() {
               ✕
             </button>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <span className="text-xs bg-purple-100 text-purple-950 font-black px-3.5 py-1 rounded-full border border-purple-200 inline-block">
                 مزامنة التقدم الدراسي 🔄
               </span>
               <h3 className="text-xl font-black text-purple-950">توليد واستعادة نقاطك</h3>
               <p className="text-xs text-slate-500 font-bold leading-relaxed">
-                استخدم كود المزامنة لنقل تقدمك التعليمي، مستواك، ونقاطك مشفرة بالكامل إلى أي جهاز آخر أو متصفح في ثانية واحدة!
+                استخدم كود المزامنة المكون من 6 أرقام لنقل المستويات والكلمات والنقاط بالكامل بين أجهزتك المفضلة بكل سهولة!
               </p>
             </div>
 
-            {/* Current Backup Code Display */}
-            <div className="space-y-2 bg-purple-50/50 p-4 rounded-2xl border border-purple-100/50">
-              <span className="text-[10px] font-black text-purple-700 block">كود المزامنة الحالي الخاص بك:</span>
-              <div className="relative">
-                <textarea
-                  readOnly
-                  dir="ltr"
-                  className="w-full bg-white select-all border border-purple-200 rounded-xl p-3 text-[10px] font-mono text-purple-950 h-24 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                  value={`SL-SYNC-${btoa(
-                    unescape(
-                      encodeURIComponent(
-                        JSON.stringify({
-                          level: userLevel,
-                          points: points,
-                          unlockedLevel: unlockedLevel,
-                          completedLevels: completedLevels,
-                          completedGroups: completedGroups,
-                          customFlashcards: customFlashcards,
-                          conversationsHad: conversationsHad,
-                          quizScore: quizScore,
-                          quizAttempts: quizAttempts,
-                          analyzedCount: analyzedCount,
-                          completedWordsCount: completedWordsCount,
-                          studentSemester: studentSemester,
-                          name: currentUser?.name || "طالب مميز"
-                        })
-                      )
-                    )
-                  )}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const txt = `SL-SYNC-${btoa(
-                      unescape(
-                        encodeURIComponent(
-                          JSON.stringify({
-                            level: userLevel,
-                            points: points,
-                            unlockedLevel: unlockedLevel,
-                            completedLevels: completedLevels,
-                            completedGroups: completedGroups,
-                            customFlashcards: customFlashcards,
-                            conversationsHad: conversationsHad,
-                            quizScore: quizScore,
-                            quizAttempts: quizAttempts,
-                            analyzedCount: analyzedCount,
-                            completedWordsCount: completedWordsCount,
-                            studentSemester: studentSemester,
-                            name: currentUser?.name || "طالب مميز"
-                          })
-                        )
-                      )
-                    )}`;
-                    navigator.clipboard.writeText(txt);
-                    alert("📋 تم نسخ كود المزامنة المشفر بنجاح!");
-                  }}
-                  className="absolute bottom-3 left-3 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1 px-2.5 rounded-lg active:scale-95 transition-all cursor-pointer"
-                >
-                  نسخ الكود 📋
-                </button>
+            {/* الخانة الأولى: توليد كود المزامنة */}
+            <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100/50 space-y-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[14px] font-black text-purple-950">🔑 الخانة الأولى: توليد الرمز الخاص بك</span>
               </div>
+              <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
+                اضغط على الزر أدناه لتحديث وتخزين بياناتك بسحابة التطبيق وتوليد كود مزامنة جديد مخصص لك لحماية تقدمك:
+              </p>
+              
+              <button
+                type="button"
+                disabled={isSyncing}
+                onClick={() => saveProgressToFirestore(false)}
+                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-black text-xs py-2.5 px-4 rounded-xl active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+              >
+                {isSyncing ? "🔄 جاري معالجة السحابة وتوليد الكود..." : "🔄 قم بتوليد كود مزامنة جديد"}
+              </button>
+
+              {currentSyncCode ? (
+                <div className="bg-white border border-purple-200 rounded-xl p-3 flex flex-col items-center gap-2.5 shadow-inner">
+                  <span className="text-[10px] font-black text-purple-700">الرمز الخاص بك الآن هو:</span>
+                  <div className="text-3xl font-black font-mono tracking-widest text-purple-950 px-5 py-1">
+                    {currentSyncCode}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(currentSyncCode);
+                        alert("📋 تم نسخ رمز المزامنة المكون من 6 أرقام بنجاح!");
+                      }}
+                      className="bg-purple-100 hover:bg-purple-200 text-purple-950 font-black text-[11px] py-1 px-3 rounded-lg active:scale-95 transition-all cursor-pointer"
+                    >
+                      نسخ الرمز 📋
+                    </button>
+                    <span className="text-[10px] text-pink-600 bg-pink-50 font-black px-2 py-0.5 rounded-lg border border-pink-100">
+                      ⏱️ صالح لمدة 30 دقيقة فقط
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-2 text-[11px] text-slate-400 font-bold">
+                  لم يتم توليد رمز للمتصفح الحالي بعد
+                </div>
+              )}
             </div>
 
-            {/* Restore / Import Code Input */}
-            <div className="space-y-2">
-              <span className="text-xs font-black text-slate-800 block">هل تريد الاستعادة من جهاز آخر؟</span>
+            {/* الخانة الثانية: ادخال الكود من جوال آخر */}
+            <div className="bg-pink-50/40 p-4 rounded-2xl border border-pink-100/30 space-y-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[14px] font-black text-pink-950">📱 الخانة الثانية: إدخال الكود من جهاز آخر</span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
+                ادخل الكود المكون من 6 أرقام للمتصفح المفتوح على جوالك الآخر لاسترجاع واستيراد تقدمك بالكامل:
+              </p>
+              
               <div className="flex gap-2">
                 <input
                   type="text"
                   dir="ltr"
-                  placeholder="أدخل كود المزامنة SL-SYNC-... هنا"
-                  className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  maxLength={6}
+                  placeholder="أدخل الرمز (6 أرقام)"
+                  className="flex-1 bg-white border border-slate-250 rounded-xl px-3 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-pink-500 text-center font-mono placeholder:font-sans placeholder:text-slate-400"
                   value={syncInputCode}
-                  onChange={(e) => setSyncInputCode(e.target.value)}
+                  onChange={(e) => setSyncInputCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 />
                 <button
                   type="button"
-                  onClick={() => {
-                    if (loadSyncCode(syncInputCode)) {
+                  onClick={async () => {
+                    if (!syncInputCode || syncInputCode.length !== 6) {
+                      alert("⚠️ يرجى إدخال رمز المزامنة المكون من 6 أرقام بالكامل.");
+                      return;
+                    }
+                    const success = await loadSyncCode(syncInputCode);
+                    if (success) {
                       setShowSyncModal(false);
                       setSyncInputCode("");
                     }
                   }}
-                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-xl text-xs font-black cursor-pointer active:scale-95 transition-all text-center"
+                  className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2.5 rounded-xl text-xs font-black cursor-pointer active:scale-95 transition-all text-center shrink-0"
                 >
                   استعادة 📥
                 </button>
+              </div>
+
+              <div className="text-[10px] text-slate-400 font-bold flex flex-col gap-1 text-center border-t border-dashed border-pink-100/50 pt-2.5">
+                <span>🔐 ميزة الفرادة والأمان مفعلة:</span>
+                <span>لا يمكن لأي طالب استخدام كود طالب آخر. يجب أن يتطابق الرقم المميز للحساب المرتبط بكل كود.</span>
               </div>
             </div>
 

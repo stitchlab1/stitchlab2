@@ -11,6 +11,10 @@
       "dest": "/stitchlab_icon_hd.png"
     },
     {
+      "src": "/.well-known/assetlinks.json",
+      "dest": "/.well-known/assetlinks.json"
+    },
+    {
       "src": "/manifest.json",
       "dest": "/manifest.json"
     },

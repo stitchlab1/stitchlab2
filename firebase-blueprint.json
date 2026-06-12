@@ -25,12 +25,27 @@
         "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp of last modification" }
       },
       "required": ["uid", "email", "name", "level", "points"]
+    },
+    "sync_code": {
+      "title": "Sync Code",
+      "description": "Represents a temporary 6-digit sync code mapping to a student's progress payload.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The unique ID of the student who generated the code" },
+        "payload": { "type": "object", "description": "The student progress payload object" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of code creation" }
+      },
+      "required": ["userId", "payload"]
     }
   },
   "firestore": {
     "students/{studentId}": {
       "schema": "student",
       "description": "User student record by the student document ID (Firebase Auth UID)."
+    },
+    "sync_codes/{code}": {
+      "schema": "sync_code",
+      "description": "Collection of 6-digit temporary codes for transferring progress."
     }
   }
 }
