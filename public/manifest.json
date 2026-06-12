@@ -11,13 +11,13 @@
   "categories": [ "education", "language" ],
   "icons": [
     {
-      "src": "/stitchlab_icon_hd.png",
+      "src": "https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/stitchlab_icon_hd.png",
+      "src": "https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
