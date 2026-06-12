@@ -3,11 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#8B5CF6" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="/manifest.json" />
-    <link rel="icon" type="image/png" href="/stitchlab_icon_hd.png" />
+    <link rel="icon" href="/stitchlab_icon_hd.png" />
+    <meta name="theme-color" content="#CDFF00" />
+    <link rel="apple-touch-icon" href="/stitchlab_icon_hd.png" />
     <title>StitchLab • تفاعلية تعلم الإنجليزية الذكية</title>
     <!-- Adsterra Social Bar Integration -->
     <script src="https://pl29694839.effectivecpmnetwork.com/e1/9d/d7/e19dd79cfea257668bce6532879dbbd0.js"></script>
@@ -20,7 +19,7 @@
       // Service Worker registration with smart background updates
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          navigator.serviceWorker.register('/service-worker.js')
             .then(reg => {
               console.log('StitchLab PWA Service Worker Registered!', reg.scope);
               

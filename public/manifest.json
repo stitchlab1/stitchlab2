@@ -7,7 +7,8 @@
   "orientation": "portrait",
   "background_color": "#1F112D",
   "theme_color": "#CDFF00",
-  "categories": ["education", "language"],
+  "id": "/stitchlab/",
+  "categories": [ "education", "language" ],
   "icons": [
     {
       "src": "/stitchlab_icon_hd.png",
@@ -20,6 +21,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
+    }
+  ],
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "com.stitchlab.app"
     }
   ]
 }
