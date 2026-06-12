@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
 import staticSheetWords from "../data/staticSheetWords.json";
+import confetti from "canvas-confetti";
 
 
 interface LearningLevel {
@@ -33,6 +34,7 @@ interface HomeWorkspaceProps {
   completedGroupsProp?: string[];
   setCompletedGroupsProp?: React.Dispatch<React.SetStateAction<string[]>>;
   completedWordsCount: number;
+  setCompletedWordsCount?: React.Dispatch<React.SetStateAction<number>>;
   studentSemester?: string;
 }
 
@@ -374,6 +376,7 @@ export default function HomeWorkspace({
   completedGroupsProp,
   setCompletedGroupsProp,
   completedWordsCount,
+  setCompletedWordsCount,
   studentSemester = "الفصل الدراسي الأول"
 }: HomeWorkspaceProps) {
   const [sheetWords, setSheetWords] = useState<SheetWord[]>(() => {
@@ -839,6 +842,18 @@ export default function HomeWorkspace({
       }
 
       setShowCompletionWarning(false);
+
+      // Trigger Confetti immediately for user engagement
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.7 }
+        });
+      } catch (confError) {
+        console.warn("Confetti execution omitted:", confError);
+      }
+
       if (currentWordIndex < trainingWords.length - 1) {
         setCurrentWordIndex(prev => prev + 1);
       } else {
@@ -1051,6 +1066,18 @@ export default function HomeWorkspace({
                       setShowTryAgain(false);
                       setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
                       playAudioFeedback(true);
+                      
+                      if (setCompletedWordsCount) {
+                        setCompletedWordsCount(prev => prev + 1);
+                      }
+                      try {
+                        confetti({
+                          particleCount: 50,
+                          spread: 60,
+                          origin: { y: 0.8 }
+                        });
+                      } catch (err) {}
+
                       setTimeout(() => {
                         setSuccessCount(prev => {
                           const next = prev + 1;
@@ -1077,6 +1104,17 @@ export default function HomeWorkspace({
                     setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
                     playAudioFeedback(true);
                     
+                    if (setCompletedWordsCount) {
+                      setCompletedWordsCount(prev => prev + 1);
+                    }
+                    try {
+                      confetti({
+                        particleCount: 50,
+                        spread: 60,
+                        origin: { y: 0.8 }
+                      });
+                    } catch (err) {}
+
                     setTimeout(() => {
                       setSuccessCount(prev => {
                         const next = prev + 1;
