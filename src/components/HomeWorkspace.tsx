@@ -857,13 +857,6 @@ export default function HomeWorkspace({
       if (currentWordIndex < trainingWords.length - 1) {
         setCurrentWordIndex(prev => prev + 1);
       } else {
-        // Open the CPM Link in a new window/tab to reward publisher CPM traffic
-        try {
-          window.open("https://www.effectivecpmnetwork.com/ktczatvrx?key=73981497b63984cc0d895e217c1ce2e2", "_blank");
-        } catch (e) {
-          console.error("Failed to open link:", e);
-        }
-
         // Save completed group key in completed groups!
         const groupKey = `${activeTrainingLevel.number}_${activeTrainingSemester}_${activeTrainingGroup}`;
         const newCompleted = [...completedGroups];

@@ -16,7 +16,8 @@ import {
   HelpCircle,
   X,
   Sparkles,
-  Copy
+  Copy,
+  Settings
 } from "lucide-react";
 import { 
   Persona, 
@@ -49,11 +50,9 @@ import {
   serverTimestamp 
 } from "firebase/firestore";
 import HomeWorkspace from "./components/HomeWorkspace";
-import AdsterraBanner from "./components/AdsterraBanner";
 import confetti from "canvas-confetti";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
-import CertificatesWorkspace from "./components/CertificatesWorkspace";
 import LearningTimer from "./components/LearningTimer";
 
 // Import newly refactored dynamic panels
@@ -144,6 +143,7 @@ export default function App() {
   // Online/Offline, Sync code states & Modals
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof window !== "undefined" ? window.navigator.onLine : true);
   const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [syncInputCode, setSyncInputCode] = useState<string>("");
   const [currentSyncCode, setCurrentSyncCode] = useState<string>("");
 
@@ -598,10 +598,11 @@ export default function App() {
         } catch (fetchErr: any) {
           setIsSyncing(false);
           handleFirestoreError(fetchErr, OperationType.GET, `sync_codes/${cleanCode}`);
+          return false;
         }
         setIsSyncing(false);
         
-        if (docSnap.exists()) {
+        if (docSnap && docSnap.exists()) {
           const docData = docSnap.data();
           if (docData && docData.payload) {
             // 1. Uniqueness Validation (الفرادة): Can't restore other students' data (unless overriding on direct confirm by admin or testing)
@@ -1407,18 +1408,18 @@ export default function App() {
 
 
 
-                    {/* Local Sync Mode Button */}
+                    {/* Settings Gear Button */}
                     <button
                       type="button"
                       onClick={() => {
-                        console.log("Button clicked: Show Sync Modal (كود المزامنة)");
-                        setShowSyncModal(true);
+                        console.log("Button clicked: Show Settings Modal");
+                        setShowSettingsModal(true);
                       }}
-                      className="bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs py-1.5 px-3.5 rounded-full border border-purple-700 hover:shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-sm"
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs py-1.5 px-3.5 rounded-full border border-slate-200 hover:shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-sm"
                       id="save-progress-header-btn"
                     >
-                      <span>🔄</span>
-                      <span>كود المزامنة</span>
+                      <Settings className="w-3.5 h-3.5 text-slate-600 animate-spin" style={{ animationDuration: '6s' }} />
+                      <span>الإعدادات</span>
                     </button>
                     
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
@@ -1661,14 +1662,6 @@ export default function App() {
                   <AboutWorkspace />
                 )}
 
-                {mainTab === "certificates" && (
-                  <CertificatesWorkspace
-                    completedLevels={completedLevels}
-                    userName={currentUser?.name || ""}
-                    LEARNING_LEVELS={LEARNING_LEVELS}
-                  />
-                )}
-
                 {mainTab === "support" && (
                   <div className="max-w-md mx-auto text-center space-y-6 py-8 animate-fadeIn" dir="rtl">
                     <div className="w-20 h-20 bg-gradient-to-tr from-amber-100 to-amber-200 border border-amber-300 text-amber-800 rounded-3xl flex items-center justify-center mx-auto shadow-sm text-3xl">
@@ -1709,92 +1702,41 @@ export default function App() {
 
               </main>
 
-              <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-pink-100 py-3.5 px-6 shadow-[0_-8px_30px_rgba(236,72,153,0.06)] z-40 w-full">
-                <div className="max-w-xl mx-auto flex items-center justify-between gap-1 select-none" dir="rtl">
+              <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-pink-100 py-3 px-6 shadow-[0_-8px_30px_rgba(236,72,153,0.06)] z-40 w-full">
+                <div className="max-w-md mx-auto flex items-center justify-around gap-4 select-none" dir="rtl">
                   
                   <button
                     type="button"
                     onClick={() => setMainTab("home")}
-                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                      mainTab === "home" 
-                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                    className={`flex-1 max-w-[145px] flex flex-col items-center gap-1 py-1.5 px-3 rounded-2xl transition-all duration-350 cursor-pointer ${
+                      mainTab === "home" || mainTab === "training"
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-md scale-105 font-black" 
+                        : "text-slate-500 hover:text-slate-850 hover:bg-slate-100"
                     }`}
                   >
-                    <div className="transition-transform duration-300 group-hover:scale-110">
-                      <BookOpen className="w-4.5 h-4.5" />
-                    </div>
+                    <BookOpen className="w-4.5 h-4.5" />
                     <span className="text-[10px] font-bold">الرئيسية</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setMainTab("achievements")}
-                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                      mainTab === "achievements" 
-                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div>
-                      <Trophy className="w-4.5 h-4.5" />
-                    </div>
-                    <span className="text-[10px] font-bold">الإنجازات</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setMainTab("about")}
-                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                      mainTab === "about" 
-                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
+                    onClick={() => {
+                      console.log("Button clicked: Toggle settings modal from bottom navigation bar");
+                      setShowSettingsModal(true);
+                    }}
+                    className={`flex-1 max-w-[145px] flex flex-col items-center gap-1 py-1.5 px-3 rounded-2xl transition-all duration-350 cursor-pointer ${
+                      showSettingsModal
+                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-md scale-105 font-black" 
                         : "text-slate-500 hover:text-slate-850 hover:bg-slate-100"
                     }`}
                   >
-                    <div>
-                      <Compass className="w-4.5 h-4.5" />
-                    </div>
-                    <span className="text-[10px] font-bold">من نحن</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setMainTab("certificates")}
-                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                      mainTab === "certificates" 
-                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div>
-                      <Award className="w-4.5 h-4.5" />
-                    </div>
-                    <span className="text-[10px] font-bold">شهاداتنا</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setMainTab("support")}
-                    className={`flex-1 flex flex-col items-center gap-1 py-1.5 px-2 rounded-xl transition-all duration-300 cursor-pointer ${
-                      mainTab === "support" 
-                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-sm scale-105 font-black" 
-                        : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div>
-                      <HelpCircle className="w-4.5 h-4.5" />
-                    </div>
-                    <span className="text-[10px] font-bold">الدعم</span>
+                    <Settings className="w-4.5 h-4.5" />
+                    <span className="text-[10px] font-bold">الإعدادات</span>
                   </button>
 
                 </div>
               </nav>
 
-              {/* Permanent Adsterra Ad Banner (Social Bar bottom layout placement) */}
-              <div className="fixed bottom-[74px] left-0 right-0 z-40 bg-white/90 backdrop-blur-sm border-t border-pink-100 py-1 flex items-center justify-center select-all" id="adsterra-social-bar-bottom-frame">
-                <AdsterraBanner />
-              </div>
-              
               {/* Educational Learning Stopwatch Timer */}
               <LearningTimer isLoggedIn={isLoggedIn} />
             </>
@@ -1920,6 +1862,112 @@ export default function App() {
                 <span>🔐 ميزة الفرادة والأمان مفعلة:</span>
                 <span>لا يمكن لأي طالب استخدام كود طالب آخر. يجب أن يتطابق الرقم المميز للحساب المرتبط بكل كود.</span>
               </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 4. UNIFIED SETTINGS GEAR MODAL */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 text-slate-800" dir="rtl">
+          <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-hidden text-right text-slate-800">
+            
+            <button
+              onClick={() => setShowSettingsModal(false)}
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full cursor-pointer transition-colors text-sm font-bold"
+            >
+              ✕
+            </button>
+
+            <div className="space-y-1.5 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2 text-purple-950">
+                <Settings className="w-6 h-6 text-purple-600 animate-spin" style={{ animationDuration: "6s" }} />
+                <h3 className="text-xl font-black">إعدادات المنصة والتحكم</h3>
+              </div>
+              <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                خصص تجربتك التعليمية، بادر بمزامنة تقدمك، تصفح إنجازاتك الدراسية، أو تواصل مع الدعم الفني مباشرة.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3.5">
+              
+              {/* Option 1: Sync Code */}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSettingsModal(false);
+                  setShowSyncModal(true);
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-purple-100 hover:border-purple-200 bg-purple-50/20 hover:bg-purple-50/55 transition-all text-right cursor-pointer group"
+              >
+                <div className="w-11 h-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 shrink-0 group-hover:scale-110 transition-transform">
+                  <span className="text-lg">🔄</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-black text-purple-950">كود المزامنة والنسخ الفوري 🔑</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">توليد رمز مكون من 6 أرقام لنقل أو استيراد نقاطك ومستوياتك بنقرة واحدة.</p>
+                </div>
+              </button>
+
+              {/* Option 2: Achievements */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMainTab("achievements");
+                  setShowSettingsModal(false);
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-200 bg-amber-50/20 hover:bg-amber-50/50 transition-all text-right cursor-pointer group"
+              >
+                <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-110 transition-transform">
+                  <Trophy className="w-5.5 h-5.5 text-amber-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-black text-amber-950">لوحة الإنجازات والوسام 🏆</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تصفح إنجازاتك الدراسية، وكمية الكلمات المحفوظة وإجمالي الأسئلة لليوم.</p>
+                </div>
+              </button>
+
+              {/* Option 3: About Us */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMainTab("about");
+                  setShowSettingsModal(false);
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-indigo-100 hover:border-indigo-200 bg-indigo-50/20 hover:bg-indigo-50/50 transition-all text-right cursor-pointer group"
+              >
+                <div className="w-11 h-11 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700 shrink-0 group-hover:scale-110 transition-transform">
+                  <Compass className="w-5.5 h-5.5 text-indigo-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-black text-indigo-950">من نحن ورؤيتنا 🔮</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تعرف على منصة StitchLab وأهدافنا لتوفير حلول ذكاء اصطناعي تفاعلية للطلاب.</p>
+                </div>
+              </button>
+
+              {/* Option 4: Support */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMainTab("support");
+                  setShowSettingsModal(false);
+                }}
+                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-100 hover:border-pink-200 bg-pink-50/20 hover:bg-pink-50/50 transition-all text-right cursor-pointer group"
+              >
+                <div className="w-11 h-11 rounded-xl bg-pink-100 flex items-center justify-center text-pink-700 shrink-0 group-hover:scale-110 transition-transform">
+                  <HelpCircle className="w-5.5 h-5.5 text-pink-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تواصل مع إدارة المنصة، أرسل استفساراتك أو واجهتك مشكلة تقنية فنية.</p>
+                </div>
+              </button>
+
+            </div>
+
+            <div className="text-[10px] text-slate-400 font-bold flex flex-col gap-1 text-center border-t border-dashed border-slate-100 pt-3">
+              <span>🔒 الأمان والمزامنة: جميع بياناتك مُشفرة وآمنة بالكامل بسحابة التطبيق.</span>
             </div>
 
           </div>
