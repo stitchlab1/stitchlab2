@@ -39,7 +39,7 @@ service cloud.firestore {
 
     // Rules for sync_codes collection (temporary 6-digit backup codes)
     match /sync_codes/{code} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
 
     // Allow read-only access for connection-verification tests

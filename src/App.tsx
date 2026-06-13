@@ -49,6 +49,7 @@ import {
   updateDoc,
   serverTimestamp 
 } from "firebase/firestore";
+import { findBackupFile, getBackupContent, saveBackup, type BackupPayload } from "./lib/googleDriveService";
 import HomeWorkspace from "./components/HomeWorkspace";
 import confetti from "canvas-confetti";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
@@ -104,6 +105,20 @@ export default function App() {
   // Save feedback state for snackbar
   const [saveStatus, setSaveStatus] = useState<{ show: boolean; success: boolean; message: string } | null>(null);
 
+  // Deep-linking capture: store parameter "ref" as the challenger reference
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refParam = urlParams.get("ref") || urlParams.get("v");
+      if (refParam) {
+        localStorage.setItem("stitchlab_challenger_ref", refParam);
+        console.log("StitchLab Deep Link: Stored challenger reference:", refParam);
+      }
+    } catch (e) {
+      console.warn("StitchLab: Failed to parse ref query parameter:", e);
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setShowSplash(false);
@@ -117,16 +132,33 @@ export default function App() {
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [name, setName] = useState<string>("");
-  const [userLevel, setUserLevel] = useState<"Beginner" | "Intermediate" | "Advanced">("Intermediate");
+  const [userLevel, setUserLevel] = useState<"Beginner" | "Intermediate" | "Advanced">(() => {
+    if (typeof window === "undefined") return "Intermediate";
+    return (localStorage.getItem("stitchlab_user_level") as any) || "Intermediate";
+  });
   const [currentUser, setCurrentUser] = useState<{ name: string; email: string; level: string } | null>(null);
   const [authError, setAuthError] = useState<string>("");
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string>("");
   const [authLoading, setAuthLoading] = useState<boolean>(false);
 
   // Firestore & Gamification states
-  const [points, setPoints] = useState<number>(0);
-  const [completedGroups, setCompletedGroups] = useState<string[]>([]);
-  const [analyzedCount, setAnalyzedCount] = useState<number>(0);
+  const [points, setPoints] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return parseInt(localStorage.getItem("stitchlab_points") || "0", 10);
+  });
+  const [completedGroups, setCompletedGroups] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stitchlab_completed_groups");
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) {
+      return [];
+    }
+  });
+  const [analyzedCount, setAnalyzedCount] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return parseInt(localStorage.getItem("stitchlab_analyzed_count") || "0", 10);
+  });
   const [completedWordsCount, setCompletedWordsCount] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
     return parseInt(localStorage.getItem("stitchlab_completed_words_count") || "0", 10);
@@ -137,8 +169,49 @@ export default function App() {
   });
   const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
-  const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const isInitialLoad = React.useRef<boolean>(true);
+
+  // Challenge states & modal triggers (Re-ordered after state definitions)
+  const [challengeChallenger, setChallengeChallenger] = useState<string | null>(null);
+  const [showChallengeModal, setShowChallengeModal] = useState<boolean>(false);
+
+  const checkChallenge = React.useCallback(() => {
+    try {
+      const storedRef = localStorage.getItem("stitchlab_challenger_ref");
+      if (!storedRef) return;
+
+      const challengerClean = storedRef.trim();
+      const currentUserName = currentUser?.name || auth.currentUser?.displayName || "طالب مميز";
+      const currentUserUid = auth.currentUser?.uid;
+
+      // Avoid challenging oneself
+      if (
+        challengerClean !== "طالب مميز" &&
+        challengerClean !== currentUserName &&
+        challengerClean !== currentUserUid
+      ) {
+        // Did user already process this specific challenger's requests?
+        const resolvedChallenges = JSON.parse(localStorage.getItem("stitchlab_resolved_challenges") || "[]");
+        if (!resolvedChallenges.includes(challengerClean)) {
+          setChallengeChallenger(challengerClean);
+          setShowChallengeModal(true);
+        }
+      }
+    } catch (e) {
+      console.warn("StitchLab checkChallenge failed:", e);
+    }
+  }, [currentUser]);
+
+  // Invoke checkChallenge whenever the user successfully signs in and client progress loading wraps up
+  useEffect(() => {
+    if (isLoggedIn && isDataLoaded) {
+      // Delay slightly to give page time to render beautifully after loading spinner transitions
+      const delayTimer = setTimeout(() => {
+        checkChallenge();
+      }, 1000);
+      return () => clearTimeout(delayTimer);
+    }
+  }, [isLoggedIn, isDataLoaded, checkChallenge]);
 
   // Online/Offline, Sync code states & Modals
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof window !== "undefined" ? window.navigator.onLine : true);
@@ -146,6 +219,20 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [syncInputCode, setSyncInputCode] = useState<string>("");
   const [currentSyncCode, setCurrentSyncCode] = useState<string>("");
+
+  // Google Drive backup states
+  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [driveFileId, setDriveFileId] = useState<string | null>(null);
+  const [isBackupLoading, setIsBackupLoading] = useState<boolean>(false);
+  const [isRestoreLoading, setIsRestoreLoading] = useState<boolean>(false);
+  const [cloudDriveBackup, setCloudDriveBackup] = useState<{
+    id: string;
+    modifiedTime?: string;
+    level: string;
+    points: number;
+    updatedAt: string;
+  } | null>(null);
+  const [showRestoreSuggestion, setShowRestoreSuggestion] = useState<boolean>(false);
 
   useEffect(() => {
     const updateOnlineStatus = () => {
@@ -171,8 +258,19 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"chat" | "analyzer" | "quiz" | "flashcards">("chat");
 
   // Game map state & custom tabs
-  const [unlockedLevel, setUnlockedLevel] = useState<number>(1);
-  const [completedLevels, setCompletedLevels] = useState<number[]>([]);
+  const [unlockedLevel, setUnlockedLevel] = useState<number>(() => {
+    if (typeof window === "undefined") return 1;
+    return parseInt(localStorage.getItem("stitchlab_unlocked_level") || "1", 10);
+  });
+  const [completedLevels, setCompletedLevels] = useState<number[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stitchlab_completed_levels");
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) {
+      return [];
+    }
+  });
   const [mainTab, setMainTab] = useState<"home" | "training" | "achievements" | "about" | "certificates" | "support">("home");
   const [currentTickTime, setCurrentTickTime] = useState<string>("14:44");
   const [bonusMinutes, setBonusMinutes] = useState<number>(15);
@@ -220,10 +318,27 @@ export default function App() {
   const [quoteIndex, setQuoteIndex] = useState<number>(0);
 
   // Statistics state
-  const [quizScore, setQuizScore] = useState<number>(0);
-  const [quizAttempts, setQuizAttempts] = useState<number>(0);
-  const [conversationsHad, setConversationsHad] = useState<number>(4);
-  const [customFlashcards, setCustomFlashcards] = useState<Flashcard[]>([]);
+  const [quizScore, setQuizScore] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return parseInt(localStorage.getItem("stitchlab_quiz_score") || "0", 10);
+  });
+  const [quizAttempts, setQuizAttempts] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return parseInt(localStorage.getItem("stitchlab_quiz_attempts") || "0", 10);
+  });
+  const [conversationsHad, setConversationsHad] = useState<number>(() => {
+    if (typeof window === "undefined") return 4;
+    return parseInt(localStorage.getItem("stitchlab_conversations_had") || "4", 10);
+  });
+  const [customFlashcards, setCustomFlashcards] = useState<Flashcard[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stitchlab_custom_cards");
+      return saved ? JSON.parse(saved) : [];
+    } catch (_) {
+      return [];
+    }
+  });
 
   // Chat parameters
   const [selectedPersona, setSelectedPersona] = useState<Persona>(PRESET_PERSONAS[0]);
@@ -321,8 +436,9 @@ export default function App() {
     }
   }, [customFlashcards]);
 
-  // Firebase auth state listener & local-first data bootstrap
+  // Firebase auth state listener & automatic cloud data sync bootstrap
   useEffect(() => {
+    console.log("Loading saved progress...");
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setIsLoggedIn(true);
@@ -331,92 +447,97 @@ export default function App() {
         setAuthError("");
         
         const uid = firebaseUser.uid;
+        let progress: any = null;
         
-        // Swifter local-first client side restoration bound to Google User ID
+        // A. Read local UID specific progress first
         try {
           const userProgressKey = `stitchlab_student_${uid}_progress`;
           const savedProgressStr = localStorage.getItem(userProgressKey);
-          
           if (savedProgressStr) {
-            // Restore from UID-specific progress
-            const progress = JSON.parse(savedProgressStr);
-            setUserLevel(progress.level || "Intermediate");
-            setPoints(progress.points || 0);
-            setUnlockedLevel(progress.unlockedLevel || 1);
-            setCompletedLevels(progress.completedLevels || []);
-            setCompletedGroups(progress.completedGroups || []);
-            setCustomFlashcards(progress.customFlashcards || []);
-            setConversationsHad(progress.conversationsHad || 0);
-            setQuizScore(progress.quizScore || 0);
-            setQuizAttempts(progress.quizAttempts || 0);
-            setAnalyzedCount(progress.analyzedCount || 0);
-            setCompletedWordsCount(progress.completedWordsCount || 0);
-            setStudentSemester(progress.studentSemester || "الفصل الدراسي الأول");
-            
-            setCurrentUser({
-              name: progress.name || firebaseUser.displayName || "طالب مميز",
-              email: firebaseUser.email || "",
-              level: progress.level || "Intermediate"
-            });
-            console.log(`StitchLab: Local-First user progress loaded for UID: ${uid} 🚀`);
-          } else {
-            // Warm-start / Link previous offline general/guest progress if present
-            const localUserLevel = localStorage.getItem("stitchlab_user_level") as any || "Intermediate";
-            const localPoints = parseInt(localStorage.getItem("stitchlab_points") || "0", 10);
-            const localUnlockedLevel = parseInt(localStorage.getItem("stitchlab_unlocked_level") || "1", 10);
-            const localCompletedLevels = JSON.parse(localStorage.getItem("stitchlab_completed_levels") || "[]");
-            const localCompletedGroups = JSON.parse(localStorage.getItem("stitchlab_completed_groups") || "[]");
-            const localCustomFlashcards = JSON.parse(localStorage.getItem("stitchlab_custom_cards") || "[]");
-            const localConversationsHad = parseInt(localStorage.getItem("stitchlab_conversations_had") || "0", 10);
-            const localQuizScore = parseInt(localStorage.getItem("stitchlab_quiz_score") || "0", 10);
-            const localQuizAttempts = parseInt(localStorage.getItem("stitchlab_quiz_attempts") || "0", 10);
-            const localAnalyzedCount = parseInt(localStorage.getItem("stitchlab_analyzed_count") || "0", 10);
-            const localCompletedWordsCount = parseInt(localStorage.getItem("stitchlab_completed_words_count") || "0", 10);
-            const localStudentSemester = localStorage.getItem("stitchlab_student_semester") || "الفصل الدراسي الأول";
-
-            const payload = {
-              uid,
-              name: firebaseUser.displayName || "طالب مميز",
-              email: firebaseUser.email || "",
-              level: localUserLevel,
-              points: localPoints,
-              unlockedLevel: localUnlockedLevel,
-              completedLevels: localCompletedLevels,
-              completedGroups: localCompletedGroups,
-              customFlashcards: localCustomFlashcards,
-              conversationsHad: localConversationsHad,
-              quizScore: localQuizScore,
-              quizAttempts: localQuizAttempts,
-              analyzedCount: localAnalyzedCount,
-              completedWordsCount: localCompletedWordsCount,
-              studentSemester: localStudentSemester
-            };
-
-            // Link the local guest state immediately to the newly signed-in Google ID!
-            localStorage.setItem(userProgressKey, JSON.stringify(payload));
-
-            setUserLevel(localUserLevel);
-            setPoints(localPoints);
-            setUnlockedLevel(localUnlockedLevel);
-            setCompletedLevels(localCompletedLevels);
-            setCompletedGroups(localCompletedGroups);
-            setCustomFlashcards(localCustomFlashcards);
-            setConversationsHad(localConversationsHad);
-            setQuizScore(localQuizScore);
-            setQuizAttempts(localQuizAttempts);
-            setAnalyzedCount(localAnalyzedCount);
-            setCompletedWordsCount(localCompletedWordsCount);
-            setStudentSemester(localStudentSemester);
-
-            setCurrentUser({
-              name: payload.name,
-              email: payload.email,
-              level: localUserLevel
-            });
-            console.log(`StitchLab: Automated linkage complete for UID: ${uid} (Linked offline session progress) ✅`);
+            progress = JSON.parse(savedProgressStr);
           }
-        } catch (e) {
-          console.warn("StitchLab Local-First restoration failed:", e);
+        } catch (localErr) {
+          console.warn("StitchLab: Failed to read from local storage:", localErr);
+        }
+
+        // B. If progress was found in localStorage, restore it!
+        if (progress) {
+          setUserLevel(progress.level || "Intermediate");
+          setPoints(progress.points !== undefined ? progress.points : 0);
+          setUnlockedLevel(progress.unlockedLevel || 1);
+          setCompletedLevels(progress.completedLevels || []);
+          setCompletedGroups(progress.completedGroups || []);
+          setCustomFlashcards(progress.customFlashcards || []);
+          setConversationsHad(progress.conversationsHad || 0);
+          setQuizScore(progress.quizScore || 0);
+          setQuizAttempts(progress.quizAttempts || 0);
+          setAnalyzedCount(progress.analyzedCount || 0);
+          setCompletedWordsCount(progress.completedWordsCount || 0);
+          setStudentSemester(progress.studentSemester || "الفصل الدراسي الأول");
+          
+          setCurrentUser({
+            name: progress.name || firebaseUser.displayName || "طالب مميز",
+            email: firebaseUser.email || "",
+            level: progress.level || "Intermediate"
+          });
+          console.log("Progress restored successfully.");
+          console.log(`[StitchLab Debug] تم استعادة التقدم بنجاح للطالب المسجل. النقاط: ${progress.points || 0}، المستوى: ${progress.level || "Intermediate"}، الكلمات: ${progress.completedWordsCount || 0}`);
+        } else {
+          // C. Warm-start fallback: Link previous offline guest / general progress to this user!
+          const localUserLevel = localStorage.getItem("stitchlab_user_level") as any || "Intermediate";
+          const localPoints = parseInt(localStorage.getItem("stitchlab_points") || "0", 10);
+          const localUnlockedLevel = parseInt(localStorage.getItem("stitchlab_unlocked_level") || "1", 10);
+          const localCompletedLevels = JSON.parse(localStorage.getItem("stitchlab_completed_levels") || "[]");
+          const localCompletedGroups = JSON.parse(localStorage.getItem("stitchlab_completed_groups") || "[]");
+          const localCustomFlashcards = JSON.parse(localStorage.getItem("stitchlab_custom_cards") || "[]");
+          const localConversationsHad = parseInt(localStorage.getItem("stitchlab_conversations_had") || "0", 10);
+          const localQuizScore = parseInt(localStorage.getItem("stitchlab_quiz_score") || "0", 10);
+          const localQuizAttempts = parseInt(localStorage.getItem("stitchlab_quiz_attempts") || "0", 10);
+          const localAnalyzedCount = parseInt(localStorage.getItem("stitchlab_analyzed_count") || "0", 10);
+          const localCompletedWordsCount = parseInt(localStorage.getItem("stitchlab_completed_words_count") || "0", 10);
+          const localStudentSemester = localStorage.getItem("stitchlab_student_semester") || "الفصل الدراسي الأول";
+
+          const payload = {
+            uid,
+            name: firebaseUser.displayName || "طالب مميز",
+            email: firebaseUser.email || "",
+            level: localUserLevel,
+            points: localPoints,
+            unlockedLevel: localUnlockedLevel,
+            completedLevels: localCompletedLevels,
+            completedGroups: localCompletedGroups,
+            customFlashcards: localCustomFlashcards,
+            conversationsHad: localConversationsHad,
+            quizScore: localQuizScore,
+            quizAttempts: localQuizAttempts,
+            analyzedCount: localAnalyzedCount,
+            completedWordsCount: localCompletedWordsCount,
+            studentSemester: localStudentSemester
+          };
+
+          const userProgressKey = `stitchlab_student_${uid}_progress`;
+          localStorage.setItem(userProgressKey, JSON.stringify(payload));
+
+          setUserLevel(localUserLevel);
+          setPoints(localPoints);
+          setUnlockedLevel(localUnlockedLevel);
+          setCompletedLevels(localCompletedLevels);
+          setCompletedGroups(localCompletedGroups);
+          setCustomFlashcards(localCustomFlashcards);
+          setConversationsHad(localConversationsHad);
+          setQuizScore(localQuizScore);
+          setQuizAttempts(localQuizAttempts);
+          setAnalyzedCount(localAnalyzedCount);
+          setCompletedWordsCount(localCompletedWordsCount);
+          setStudentSemester(localStudentSemester);
+
+          setCurrentUser({
+            name: payload.name,
+            email: payload.email,
+            level: localUserLevel
+          });
+          console.log("Progress restored successfully.");
+          console.log(`[StitchLab Debug] تم استعادة التقدم بنجاح (ربط تقدم الزائر بالرئيسي). النقاط: ${localPoints}، المستوى: ${localUserLevel}، الكلمات: ${localCompletedWordsCount}`);
         }
         
         setIsDataLoaded(true);
@@ -424,8 +545,42 @@ export default function App() {
       } else {
         setIsLoggedIn(false);
         setCurrentUser(null);
-        setIsDataLoaded(false);
+        setDriveToken(null);
+        setDriveFileId(null);
+        setCloudDriveBackup(null);
+        setShowRestoreSuggestion(false);
+        
+        // Force offline guest cache restoration so guest users are fully active without Google sign-in
+        const localUserLevel = localStorage.getItem("stitchlab_user_level") as any || "Intermediate";
+        const localPoints = parseInt(localStorage.getItem("stitchlab_points") || "0", 10);
+        const localUnlockedLevel = parseInt(localStorage.getItem("stitchlab_unlocked_level") || "1", 10);
+        const localCompletedLevels = JSON.parse(localStorage.getItem("stitchlab_completed_levels") || "[]");
+        const localCompletedGroups = JSON.parse(localStorage.getItem("stitchlab_completed_groups") || "[]");
+        const localCustomFlashcards = JSON.parse(localStorage.getItem("stitchlab_custom_cards") || "[]");
+        const localConversationsHad = parseInt(localStorage.getItem("stitchlab_conversations_had") || "0", 10);
+        const localQuizScore = parseInt(localStorage.getItem("stitchlab_quiz_score") || "0", 10);
+        const localQuizAttempts = parseInt(localStorage.getItem("stitchlab_quiz_attempts") || "0", 10);
+        const localAnalyzedCount = parseInt(localStorage.getItem("stitchlab_analyzed_count") || "0", 10);
+        const localCompletedWordsCount = parseInt(localStorage.getItem("stitchlab_completed_words_count") || "0", 10);
+        const localStudentSemester = localStorage.getItem("stitchlab_student_semester") || "الفصل الدراسي الأول";
+        
+        setUserLevel(localUserLevel);
+        setPoints(localPoints);
+        setUnlockedLevel(localUnlockedLevel);
+        setCompletedLevels(localCompletedLevels);
+        setCompletedGroups(localCompletedGroups);
+        setCustomFlashcards(localCustomFlashcards);
+        setConversationsHad(localConversationsHad);
+        setQuizScore(localQuizScore);
+        setQuizAttempts(localQuizAttempts);
+        setAnalyzedCount(localAnalyzedCount);
+        setCompletedWordsCount(localCompletedWordsCount);
+        setStudentSemester(localStudentSemester);
+        
+        setIsDataLoaded(true);
         setAuthLoading(false);
+        console.log("Progress restored successfully.");
+        console.log(`[StitchLab Debug] تم استعادة التقدم بنجاح للمستخدم الزائر. النقاط: ${localPoints}، المستوى: ${localUserLevel}، الكلمات: ${localCompletedWordsCount}`);
       }
     });
 
@@ -445,33 +600,302 @@ export default function App() {
     }
   }, [isDataLoaded]);
 
+  // Check Google Drive for any existing backup
+  const checkGoogleDriveForBackup = async (token: string, silent = true) => {
+    try {
+      console.log("StitchLab Drive: Checking for backup...");
+      const file = await findBackupFile(token);
+      if (file) {
+        setDriveFileId(file.id);
+        const backup = await getBackupContent(token, file.id);
+        if (backup) {
+          const drivePoints = backup.Achievements?.points || 0;
+          const driveWords = backup.WordCounter?.completedWordsCount || 0;
+          console.log(`StitchLab Drive: Backup found with points: ${drivePoints} (local points: ${points})`);
+          
+          setCloudDriveBackup({
+            id: file.id,
+            modifiedTime: file.modifiedTime,
+            level: backup.Level,
+            points: drivePoints,
+            updatedAt: backup.updatedAt || new Date().toISOString()
+          });
+
+          // Check if Google Drive backup is newer or has superior progress than local storage
+          if (drivePoints > points || driveWords > completedWordsCount) {
+            setShowRestoreSuggestion(true);
+            if (!silent) {
+              console.log("StitchLab Drive: Cloud backup is superior, suggesting restore.");
+            }
+          }
+        }
+      } else {
+        console.log("StitchLab Drive: No backup file found on Google Drive.");
+      }
+    } catch (e) {
+      console.warn("StitchLab Drive: Error while checking backup:", e);
+    }
+  };
+
+  // Perform Backup to Google Drive
+  const backupToGoogleDriveNow = async (forceToken?: string) => {
+    const token = forceToken || driveToken;
+    let finalToken = token;
+    if (!finalToken) {
+      // Prompt sign in popup to get permission token
+      try {
+        const { GoogleAuthProvider } = await import("firebase/auth");
+        const result = await signInWithPopup(auth, googleProvider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          finalToken = credential.accessToken;
+          setDriveToken(credential.accessToken);
+        } else {
+          alert("⚠️ فشل الحصول على كود الصلاحية من Google Drive. يرجى تسجيل الدخول مرة أخرى.");
+          return;
+        }
+      } catch (err) {
+        console.error("Popup Auth failed:", err);
+        alert("⚠️ يرجى تفويض صلاحية الوصول إلى Google App Data لإتمام النسخ الاحتياطي.");
+        return;
+      }
+    }
+
+    setIsBackupLoading(true);
+    try {
+      const progressPayload: BackupPayload = {
+        Level: userLevel,
+        SavedWords: customFlashcards,
+        WordCounter: {
+          completedWordsCount: completedWordsCount,
+          analyzedCount: analyzedCount
+        },
+        Achievements: {
+          points: points,
+          unlockedLevel: unlockedLevel,
+          completedLevels: completedLevels,
+          completedGroups: completedGroups,
+          conversationsHad: conversationsHad,
+          quizScore: quizScore,
+          quizAttempts: quizAttempts,
+          studentSemester: studentSemester
+        },
+        updatedAt: new Date().toISOString()
+      };
+
+      // Find file ID if we don't have it yet
+      let fileId = driveFileId;
+      if (!fileId) {
+        const file = await findBackupFile(finalToken);
+        if (file) {
+          fileId = file.id;
+          setDriveFileId(file.id);
+        }
+      }
+
+      const res = await saveBackup(finalToken, progressPayload, fileId);
+      if (res && res.id) {
+        setDriveFileId(res.id);
+        setHasUnsavedChanges(false);
+        // Refresh cloud metadata on success
+        setCloudDriveBackup({
+          id: res.id,
+          level: userLevel,
+          points: points,
+          updatedAt: progressPayload.updatedAt
+        });
+        alert("☁️ تم النسخ الاحتياطي التلقائي والمستدام لنقاطك ومستوياتك ومحفظتك إلى Google Drive بنجاح!");
+        try { playAudioFeedback(true); } catch (_) {}
+      }
+    } catch (err: any) {
+      console.error("Backup failed:", err);
+      alert("❌ عذراً، فشل إجراء النسخ الاحتياطي إلى Google Drive. يرجى تكرار المحاولة.");
+    } finally {
+      setIsBackupLoading(false);
+    }
+  };
+
+  // Perform Restore from Google Drive
+  const restoreFromGoogleDriveNow = async (forceToken?: string) => {
+    const token = forceToken || driveToken;
+    let finalToken = token;
+    if (!finalToken) {
+      try {
+        const { GoogleAuthProvider } = await import("firebase/auth");
+        const result = await signInWithPopup(auth, googleProvider);
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        if (credential?.accessToken) {
+          finalToken = credential.accessToken;
+          setDriveToken(credential.accessToken);
+        } else {
+          alert("⚠️ فشل الحصول على كود الصلاحية من Google Drive.");
+          return;
+        }
+      } catch (err) {
+        console.error("Auth popup failed:", err);
+        alert("⚠️ يرجى تفويض صلاحية الوصول إلى حساب Google لإجراء الاستعادة.");
+        return;
+      }
+    }
+
+    setIsRestoreLoading(true);
+    try {
+      // Find backup file
+      const file = await findBackupFile(finalToken);
+      if (!file) {
+        alert("⚠️ عذراً! لم نجد أي ملفات تقدم دراسي محفوظة مسبقاً لحساب Google هذا على Google Drive.");
+        setIsRestoreLoading(false);
+        return;
+      }
+
+      const backup = await getBackupContent(finalToken, file.id);
+      if (backup) {
+        // Apply state restorers!
+        setUserLevel(backup.Level || "Intermediate");
+        setCustomFlashcards(backup.SavedWords || []);
+        if (backup.WordCounter) {
+          setCompletedWordsCount(backup.WordCounter.completedWordsCount || 0);
+          setAnalyzedCount(backup.WordCounter.analyzedCount || 0);
+        }
+        if (backup.Achievements) {
+          setPoints(backup.Achievements.points || 0);
+          setUnlockedLevel(backup.Achievements.unlockedLevel || 1);
+          setCompletedLevels(backup.Achievements.completedLevels || []);
+          setCompletedGroups(backup.Achievements.completedGroups || []);
+          setConversationsHad(backup.Achievements.conversationsHad || 0);
+          setQuizScore(backup.Achievements.quizScore || 0);
+          setQuizAttempts(backup.Achievements.quizAttempts || 0);
+          setStudentSemester(backup.Achievements.studentSemester || "الفصل الدراسي الأول");
+        }
+        
+        setHasUnsavedChanges(false);
+        setShowRestoreSuggestion(false);
+        alert("🎉 تهانينا! تم استعادة جميع الإنجازات ومجلد الكلمات والمستويات بنجاح تام بنقرة واحدة!");
+        try { playAudioFeedback(true); } catch (_) {}
+      } else {
+        alert("❌ قراءة ملف النسخة الاحتياطية فارغة أو غير متوافقة.");
+      }
+    } catch (err) {
+      console.error("Restore failed:", err);
+      alert("❌ عذراً، تعذر إنهاء عملية الاستعادة بنقرة واحدة. يرجى المحاولة بشكل لاحق.");
+    } finally {
+      setIsRestoreLoading(false);
+    }
+  };
+
+  // Silent automatic Google Drive background backup
+  const backupProgressToGoogleDrive = async () => {
+    if (!driveToken || !isDataLoaded) return;
+    try {
+      const progressPayload: BackupPayload = {
+        Level: userLevel,
+        SavedWords: customFlashcards,
+        WordCounter: {
+          completedWordsCount: completedWordsCount,
+          analyzedCount: analyzedCount
+        },
+        Achievements: {
+          points: points,
+          unlockedLevel: unlockedLevel,
+          completedLevels: completedLevels,
+          completedGroups: completedGroups,
+          conversationsHad: conversationsHad,
+          quizScore: quizScore,
+          quizAttempts: quizAttempts,
+          studentSemester: studentSemester
+        },
+        updatedAt: new Date().toISOString()
+      };
+      
+      const fileId = driveFileId || (await findBackupFile(driveToken))?.id;
+      const res = await saveBackup(driveToken, progressPayload, fileId);
+      if (res && res.id) {
+        setDriveFileId(res.id);
+        setHasUnsavedChanges(false);
+        console.log("StitchLab Drive: Automatic background cloud backup succeeded ☁️");
+      }
+    } catch (err) {
+      console.warn("StitchLab Drive: Auto background backup failed:", err);
+    }
+  };
+
   // Monitor user state edits to set unsaved changes flag and save immediately to localStorage for ultimate safe offline persistence
   useEffect(() => {
-    if (!isLoggedIn || !isDataLoaded) return;
+    if (!isDataLoaded) return;
     
-    // Write immediately to memory cache so progress is never lost even if they close without syncing
-    localStorage.setItem("stitchlab_user_level", userLevel);
-    localStorage.setItem("stitchlab_points", points.toString());
-    localStorage.setItem("stitchlab_unlocked_level", unlockedLevel.toString());
-    localStorage.setItem("stitchlab_completed_levels", JSON.stringify(completedLevels));
-    localStorage.setItem("stitchlab_completed_groups", JSON.stringify(completedGroups));
-    localStorage.setItem("stitchlab_custom_cards", JSON.stringify(customFlashcards));
-    localStorage.setItem("stitchlab_conversations_had", conversationsHad.toString());
-    localStorage.setItem("stitchlab_quiz_score", quizScore.toString());
-    localStorage.setItem("stitchlab_quiz_attempts", quizAttempts.toString());
-    localStorage.setItem("stitchlab_analyzed_count", analyzedCount.toString());
-    
-    localStorage.setItem("stitchlab_completed_words_count", completedWordsCount.toString());
-    localStorage.setItem("stitchlab_student_semester", studentSemester);
-    
+    console.log("Saving progress...");
+    try {
+      // Write immediately to memory cache so progress is never lost even if they close without syncing
+      localStorage.setItem("stitchlab_user_level", userLevel);
+      localStorage.setItem("stitchlab_points", points.toString());
+      localStorage.setItem("stitchlab_unlocked_level", unlockedLevel.toString());
+      localStorage.setItem("stitchlab_completed_levels", JSON.stringify(completedLevels));
+      localStorage.setItem("stitchlab_completed_groups", JSON.stringify(completedGroups));
+      localStorage.setItem("stitchlab_custom_cards", JSON.stringify(customFlashcards));
+      localStorage.setItem("stitchlab_conversations_had", conversationsHad.toString());
+      localStorage.setItem("stitchlab_quiz_score", quizScore.toString());
+      localStorage.setItem("stitchlab_quiz_attempts", quizAttempts.toString());
+      localStorage.setItem("stitchlab_analyzed_count", analyzedCount.toString());
+      localStorage.setItem("stitchlab_completed_words_count", completedWordsCount.toString());
+      localStorage.setItem("stitchlab_student_semester", studentSemester);
+      
+      // If logged in, also immediately update user-specific progress payload in localStorage
+      if (isLoggedIn && auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        const userProgressKey = `stitchlab_student_${uid}_progress`;
+        const progressPayload = {
+          uid,
+          name: currentUser?.name || auth.currentUser.displayName || "طالب مميز",
+          email: auth.currentUser.email || "",
+          level: userLevel,
+          points: points,
+          unlockedLevel: unlockedLevel,
+          completedLevels: completedLevels,
+          completedGroups: completedGroups,
+          customFlashcards: customFlashcards,
+          conversationsHad: conversationsHad,
+          quizScore: quizScore,
+          quizAttempts: quizAttempts,
+          analyzedCount: analyzedCount,
+          completedWordsCount: completedWordsCount,
+          studentSemester: studentSemester,
+          updatedAt: new Date().toISOString()
+        };
+        localStorage.setItem(userProgressKey, JSON.stringify(progressPayload));
+      }
+
+      // Verifying if the save succeeded
+      const checkPoints = localStorage.getItem("stitchlab_points");
+      const checkLevel = localStorage.getItem("stitchlab_user_level");
+      if (checkPoints === points.toString() && checkLevel === userLevel) {
+        console.log("Progress saved successfully.");
+        console.log(`[StitchLab Debug] تم حفظ التقدم بنجاح ومطابقته دائمًا. النقاط: ${points}، المستوى: ${userLevel}، الكلمات المنجزة: ${completedWordsCount}`);
+      } else {
+        console.warn("StitchLab Debug: Progress written but verification check failed or value mismatched.");
+      }
+    } catch (saveErr) {
+      console.error("StitchLab Debug: Progress save failed in localStorage:", saveErr);
+    }
+
     if (isInitialLoad.current) {
       return;
     }
     
-    setHasUnsavedChanges(true);
+    // Google Drive background backup trigger
+    if (isLoggedIn && auth.currentUser && driveToken) {
+      setHasUnsavedChanges(true);
+
+      // Debounce Google Drive backups by 5 seconds to avoid over-spamming API limits during interactions
+      const timer = setTimeout(() => {
+        backupProgressToGoogleDrive();
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
   }, [
     isLoggedIn,
     isDataLoaded,
+    driveToken,
     userLevel, 
     points, 
     unlockedLevel, 
@@ -498,230 +922,6 @@ export default function App() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
-
-  // Local-First Sync-Code packager (Zero server costs)
-  const saveProgressToFirestore = async (silent = false) => {
-    console.log("Button clicked: saveProgressToFirestore started", { silent });
-    if (!isLoggedIn || !auth.currentUser) {
-      if (!silent) {
-        alert("⚠️ يرجى تسجيل الدخول أولاً بحساب Google الخاص بك لتتمكن من توليد كود مزامنة وحفظ تقدمك.");
-      }
-      return;
-    }
-    if (!isDataLoaded) {
-      if (!silent) {
-        alert("⚠️ جاري تحميل البيانات، يرجى المحاولة بعد قليل.");
-      }
-      return;
-    }
-    setIsSyncing(true);
-    
-    try {
-      const uid = auth.currentUser.uid;
-      const progressPayload = {
-        uid,
-        name: currentUser?.name || auth.currentUser.displayName || "طالب مميز",
-        email: auth.currentUser.email || "",
-        level: userLevel,
-        points: points,
-        unlockedLevel: unlockedLevel,
-        completedLevels: completedLevels,
-        completedGroups: completedGroups,
-        customFlashcards: customFlashcards,
-        conversationsHad: conversationsHad,
-        quizScore: quizScore,
-        quizAttempts: quizAttempts,
-        analyzedCount: analyzedCount,
-        completedWordsCount: completedWordsCount,
-        studentSemester: studentSemester
-      };
-      
-      // Save locally under UID
-      localStorage.setItem(`stitchlab_student_${uid}_progress`, JSON.stringify(progressPayload));
-      setHasUnsavedChanges(false);
-      
-      // Generate random 6-digit sync code
-      const freshCode = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      // Save progress to cloud Firestore
-      try {
-        await setDoc(doc(db, "sync_codes", freshCode), {
-          payload: progressPayload,
-          createdAt: serverTimestamp(),
-          userId: uid // Storing unique student's user ID with the code
-        });
-      } catch (writeErr: any) {
-        // Diagnose failure with unified Firestore error handler required by system skills
-        handleFirestoreError(writeErr, OperationType.WRITE, `sync_codes/${freshCode}`);
-      }
-      
-      setCurrentSyncCode(freshCode);
-      
-      if (!silent) {
-        setSaveStatus({
-          show: true,
-          success: true,
-          message: "🎉 تم تحديث بياناتك المحلية وتوليد كود المزامنة بنجاح!"
-        });
-        try { playAudioFeedback(true); } catch(e) {}
-        
-        // Open the sync/backup modal to display the code!
-        setShowSyncModal(true);
-      }
-    } catch (err: any) {
-      console.error("Local sync code compilation failed:", err);
-      if (!silent) {
-        setSaveStatus({
-          show: true,
-          success: false,
-          message: `⚠️ فشل توليد الكود: ${err.message || err}`
-        });
-      }
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  // manual Sync-Code loader for restoring or transferring state across browsers/devices
-  const loadSyncCode = async (codeStr: string) => {
-    try {
-      const cleanCode = codeStr.trim();
-      let progress: any = null;
-      
-      if (/^\d{6}$/.test(cleanCode)) {
-        // If it's a 6-digit sync code, fetch from Cloud Firestore!
-        setIsSyncing(true);
-        const docRef = doc(db, "sync_codes", cleanCode);
-        let docSnap;
-        try {
-          docSnap = await getDoc(docRef);
-        } catch (fetchErr: any) {
-          setIsSyncing(false);
-          handleFirestoreError(fetchErr, OperationType.GET, `sync_codes/${cleanCode}`);
-          return false;
-        }
-        setIsSyncing(false);
-        
-        if (docSnap && docSnap.exists()) {
-          const docData = docSnap.data();
-          if (docData && docData.payload) {
-            // 1. Uniqueness Validation (الفرادة): Can't restore other students' data (unless overriding on direct confirm by admin or testing)
-            if (docData.userId && auth.currentUser && docData.userId !== auth.currentUser.uid) {
-              const confirmOverride = window.confirm(
-                "⚠️ تنبيه الفرادة والأمان: كود المزامنة هذا مسجل لحساب طالب آخر.\n" +
-                "هل أنت متأكد من رغبتك بالاستعادة ودمج البيانات واستبدال تقدمك الحالي بالكامل؟"
-              );
-              if (!confirmOverride) {
-                return false;
-              }
-            }
-
-            // 2. Validity of 30 minutes check (مدة الصلاحية)
-            let createdMs = Date.now();
-            if (docData.createdAt) {
-              const ca = docData.createdAt;
-              if (typeof ca.toMillis === 'function') {
-                createdMs = ca.toMillis();
-              } else if (typeof ca.toDate === 'function') {
-                createdMs = ca.toDate().getTime();
-              } else if (ca.seconds) {
-                createdMs = ca.seconds * 1000;
-              } else if (typeof ca === 'object' && ca._seconds) {
-                createdMs = ca._seconds * 1000;
-              } else {
-                const parsed = Date.parse(String(ca));
-                if (!isNaN(parsed)) {
-                  createdMs = parsed;
-                }
-              }
-            }
-            const thirtyMinutesInMs = 30 * 60 * 1000;
-            const ageInMs = Date.now() - createdMs;
-            // Tolerating a 45-minute window or safety clocks
-            if (ageInMs > thirtyMinutesInMs && ageInMs < 12 * 60 * 60 * 1000) {
-              alert("⚠️ عذراً، انتهت صلاحية كود المزامنة هذا! لضمان الأمان الأقصى، تكون الأكواد صالحة لمدة 30 دقيقة فقط من لحظة توليدها. يرجى توليد كود جديد من الجهاز الأصلي.");
-              return false;
-            }
-
-            progress = docData.payload;
-          } else {
-            alert("⚠️ الكود صالح ولكن لا توجد بيانات مرتبطة به.");
-            return false;
-          }
-        } else {
-          alert("⚠️ كود المزامنة غير صحيح أو منتهي الصلاحية. يرجى التأكد من الرقم والمحاولة لاحقاً.");
-          return false;
-        }
-      } else if (cleanCode.startsWith("SL-SYNC-")) {
-        // Support backwards compatibility for older long Base64 codes
-        const base64Part = cleanCode.replace("SL-SYNC-", "");
-        // Decode Base64 safely dealing with UTF-8
-        const jsonStr = decodeURIComponent(escape(atob(base64Part)));
-        progress = JSON.parse(jsonStr);
-      } else {
-        alert("⚠️ كود المزامنة غير صالح. يرجى إدخال الرقم المكون من 6 خانات أو الكود القديم.");
-        return false;
-      }
-      
-      if (!progress || typeof progress !== "object") {
-        throw new Error("Invalid structure");
-      }
-      
-      // Update state
-      if (progress.level) setUserLevel(progress.level);
-      if (typeof progress.points === "number") setPoints(progress.points);
-      if (typeof progress.unlockedLevel === "number") setUnlockedLevel(progress.unlockedLevel);
-      if (Array.isArray(progress.completedLevels)) setCompletedLevels(progress.completedLevels);
-      if (Array.isArray(progress.completedGroups)) setCompletedGroups(progress.completedGroups);
-      if (Array.isArray(progress.customFlashcards)) setCustomFlashcards(progress.customFlashcards);
-      if (typeof progress.conversationsHad === "number") setConversationsHad(progress.conversationsHad);
-      if (typeof progress.quizScore === "number") setQuizScore(progress.quizScore);
-      if (typeof progress.quizAttempts === "number") setQuizAttempts(progress.quizAttempts);
-      if (typeof progress.analyzedCount === "number") setAnalyzedCount(progress.analyzedCount);
-      if (typeof progress.completedWordsCount === "number") setCompletedWordsCount(progress.completedWordsCount);
-      if (progress.studentSemester) setStudentSemester(progress.studentSemester);
-      
-      // Save directly under user progress key in local storage as well
-      if (auth.currentUser) {
-        const uid = auth.currentUser.uid;
-        localStorage.setItem(`stitchlab_student_${uid}_progress`, JSON.stringify({
-          uid,
-          name: progress.name || currentUser?.name || auth.currentUser.displayName || "طالب مميز",
-          email: auth.currentUser.email || "",
-          level: progress.level || userLevel,
-          points: progress.points !== undefined ? progress.points : points,
-          unlockedLevel: progress.unlockedLevel !== undefined ? progress.unlockedLevel : unlockedLevel,
-          completedLevels: progress.completedLevels || completedLevels,
-          completedGroups: progress.completedGroups || completedGroups,
-          customFlashcards: progress.customFlashcards || customFlashcards,
-          conversationsHad: progress.conversationsHad !== undefined ? progress.conversationsHad : conversationsHad,
-          quizScore: progress.quizScore !== undefined ? progress.quizScore : quizScore,
-          quizAttempts: progress.quizAttempts !== undefined ? progress.quizAttempts : quizAttempts,
-          analyzedCount: progress.analyzedCount !== undefined ? progress.analyzedCount : analyzedCount,
-          completedWordsCount: progress.completedWordsCount !== undefined ? progress.completedWordsCount : completedWordsCount,
-          studentSemester: progress.studentSemester || studentSemester
-        }));
-      }
-      
-      setHasUnsavedChanges(false);
-      
-      try {
-        confetti({
-          particleCount: 120,
-          spread: 90,
-          origin: { y: 0.5 }
-        });
-      } catch (confError) {}
-      
-      alert("🎉 تم استعادة ومزامنة التقدم بنجاح! تم استرجاع نقاطك وكلماتك المنجزة بنسبة 100%.");
-      return true;
-    } catch (err: any) {
-      console.error("Manual sync failed:", err);
-      const detailError = err?.message || String(err);
-      alert(`⚠️ فشل في دمج البيانات:\n${detailError}\nيرجى تحقق من الرمز ومحاولة الاتصال لاحقاً.`);
-      return false;
-    }
-  };
 
   // Study timer: counts down the daily session seconds
   useEffect(() => {
@@ -774,7 +974,16 @@ export default function App() {
     setAuthError("");
     setAuthLoading(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const { GoogleAuthProvider } = await import("firebase/auth");
+      const result = await signInWithPopup(auth, googleProvider);
+      const credential = GoogleAuthProvider.credentialFromResult(result);
+      if (credential?.accessToken) {
+        setDriveToken(credential.accessToken);
+        console.log("StitchLab Drive: Dynamic token acquired upon authentication:", credential.accessToken);
+        await checkGoogleDriveForBackup(credential.accessToken, false);
+      } else {
+        console.warn("StitchLab Drive: Authentication successful but No access credentials returned.");
+      }
     } catch (err: any) {
       console.error("Google Sign-In failed:", err);
       const errStr = err.message || "";
@@ -809,7 +1018,31 @@ export default function App() {
       if (hasUnsavedChanges) {
         const confirmSave = window.confirm("لديك تقدم لغوي جديد غير محفوظ سحابياً في StitchLab. هل ترغب بحفظه في حسابك قبل تسجيل الخروج لمزامنته؟");
         if (confirmSave) {
-          await saveProgressToFirestore(true);
+          if (driveToken) {
+            await backupToGoogleDriveNow();
+          } else {
+            const uid = auth.currentUser ? auth.currentUser.uid : "guest";
+            const progressPayload = {
+              uid,
+              name: currentUser?.name || auth.currentUser?.displayName || "طالب مميز",
+              email: auth.currentUser?.email || "",
+              level: userLevel,
+              points: points,
+              unlockedLevel: unlockedLevel,
+              completedLevels: completedLevels,
+              completedGroups: completedGroups,
+              customFlashcards: customFlashcards,
+              conversationsHad: conversationsHad,
+              quizScore: quizScore,
+              quizAttempts: quizAttempts,
+              analyzedCount: analyzedCount,
+              completedWordsCount: completedWordsCount,
+              studentSemester: studentSemester,
+              updatedAt: new Date().toISOString()
+            };
+            localStorage.setItem(`stitchlab_student_${uid}_progress`, JSON.stringify(progressPayload));
+            setHasUnsavedChanges(false);
+          }
         }
       }
       await signOut(auth);
@@ -947,6 +1180,68 @@ export default function App() {
     setCompletedLevels([]);
     localStorage.setItem("stitchlab_unlocked_level", "1");
     localStorage.setItem("stitchlab_completed_levels", JSON.stringify([]));
+  };
+
+  const handleForceSaveProgress = (overrides?: Partial<{
+    completedGroups: string[];
+    completedWordsCount: number;
+    unlockedLevel: number;
+    completedLevels: number[];
+  }>) => {
+    console.log("[StitchLab] Forcing immediate, synchronous save to localStorage...");
+    try {
+      const finalCompletedGroups = overrides?.completedGroups ?? completedGroups;
+      const finalCompletedWordsCount = overrides?.completedWordsCount ?? completedWordsCount;
+      const finalUnlockedLevel = overrides?.unlockedLevel ?? unlockedLevel;
+      const finalCompletedLevels = overrides?.completedLevels ?? completedLevels;
+
+      localStorage.setItem("stitchlab_completed_groups", JSON.stringify(finalCompletedGroups));
+      localStorage.setItem("stitchlab_completed_words_count", finalCompletedWordsCount.toString());
+      localStorage.setItem("stitchlab_unlocked_level", finalUnlockedLevel.toString());
+      localStorage.setItem("stitchlab_completed_levels", JSON.stringify(finalCompletedLevels));
+
+      localStorage.setItem("stitchlab_user_level", userLevel);
+      localStorage.setItem("stitchlab_points", points.toString());
+      localStorage.setItem("stitchlab_custom_cards", JSON.stringify(customFlashcards));
+      localStorage.setItem("stitchlab_conversations_had", conversationsHad.toString());
+      localStorage.setItem("stitchlab_quiz_score", quizScore.toString());
+      localStorage.setItem("stitchlab_quiz_attempts", quizAttempts.toString());
+      localStorage.setItem("stitchlab_analyzed_count", analyzedCount.toString());
+      localStorage.setItem("stitchlab_student_semester", studentSemester);
+
+      if (isLoggedIn && auth.currentUser) {
+        const uid = auth.currentUser.uid;
+        const userProgressKey = `stitchlab_student_${uid}_progress`;
+        const progressPayload = {
+          uid,
+          name: currentUser?.name || auth.currentUser.displayName || "طالب مميز",
+          email: auth.currentUser.email || "",
+          level: userLevel,
+          points: points,
+          unlockedLevel: finalUnlockedLevel,
+          completedLevels: finalCompletedLevels,
+          completedGroups: finalCompletedGroups,
+          customFlashcards: customFlashcards,
+          conversationsHad: conversationsHad,
+          quizScore: quizScore,
+          quizAttempts: quizAttempts,
+          analyzedCount: analyzedCount,
+          completedWordsCount: finalCompletedWordsCount,
+          studentSemester: studentSemester,
+          updatedAt: new Date().toISOString()
+        };
+        localStorage.setItem(userProgressKey, JSON.stringify(progressPayload));
+      }
+
+      // Verify and match saved status
+      const checkPoints = localStorage.getItem("stitchlab_points");
+      const checkLevel = localStorage.getItem("stitchlab_user_level");
+      if (checkPoints === points.toString() && checkLevel === userLevel) {
+        console.log("[StitchLab Debug] Forced save completed and verified completely.");
+      }
+    } catch (err) {
+      console.error("[StitchLab Debug] Immediate force-save failed:", err);
+    }
   };
 
   const getActiveChatMessages = (): ChatMessage[] => {
@@ -1246,9 +1541,6 @@ export default function App() {
                 <span className="text-purple-600">Stitch</span>
                 <span className="text-pink-500">Lab</span>
               </h1>
-              <p className="text-sm text-purple-950 font-bold tracking-wide">
-                المختبر والمدرب التفاعلي الذكي للتحدث بطلاقة 🤖🎓
-              </p>
             </div>
             {/* Progress Bar Indicator for 10 seconds */}
             <div className="w-56 h-2 md:h-2.5 bg-pink-100/60 mx-auto rounded-full overflow-hidden relative border border-pink-200/50">
@@ -1259,9 +1551,6 @@ export default function App() {
                 transition={{ duration: 10, ease: "linear" }}
               />
             </div>
-            <p className="text-xs text-purple-800 font-extrabold animate-pulse">
-              أهلاً بك في عالم التحدث التفاعلي الذكي... ✨
-            </p>
           </div>
         </div>
       </div>
@@ -1408,19 +1697,7 @@ export default function App() {
 
 
 
-                    {/* Settings Gear Button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        console.log("Button clicked: Show Settings Modal");
-                        setShowSettingsModal(true);
-                      }}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs py-1.5 px-3.5 rounded-full border border-slate-200 hover:shadow-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5 shadow-sm"
-                      id="save-progress-header-btn"
-                    >
-                      <Settings className="w-3.5 h-3.5 text-slate-600 animate-spin" style={{ animationDuration: '6s' }} />
-                      <span>الإعدادات</span>
-                    </button>
+
                     
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
                       <span className="text-xs font-black">الطالب: {currentUser?.name || "طالب مميز"}</span>
@@ -1462,6 +1739,44 @@ export default function App() {
 
               <main className="flex-1 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 pb-36 z-10">
                 
+                {/* Google Drive Restore Suggestion Alert Banner */}
+                {isLoggedIn && showRestoreSuggestion && cloudDriveBackup && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mb-6 p-4 md:p-5 rounded-2xl bg-gradient-to-r from-purple-50 via-white to-pink-50 border border-purple-200/60 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4 text-right"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center text-lg shrink-0">
+                        ☁️
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-purple-950">توجد نسخة احتياطية أحدث على Google Drive! 📥</h4>
+                        <p className="text-slate-500 text-[11px] mt-0.5 leading-normal font-bold">
+                          تحتوي النسخة السحابية لحسابك على <strong className="text-purple-700">{cloudDriveBackup.points} نقطة</strong> ومستوى <strong className="text-pink-900">{cloudDriveBackup.level}</strong> مقارنة بنقاطك المحلية الحالية (<strong className="text-slate-700">{points} نقطة</strong>).
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto">
+                      <button
+                        type="button"
+                        disabled={isRestoreLoading}
+                        onClick={() => restoreFromGoogleDriveNow()}
+                        className="flex-1 md:flex-none py-2 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-black text-xs cursor-pointer shadow-sm active:scale-95 transition-all text-center"
+                      >
+                        {isRestoreLoading ? "جاري الاستعادة..." : "استعادة التقدم بنقرة واحدة ⚡"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowRestoreSuggestion(false)}
+                        className="py-2 px-3 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs cursor-pointer active:scale-95 transition-all"
+                      >
+                        تجاهل
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+                
                 {mainTab === "home" && (
                   <HomeWorkspace
                     unlockedLevel={unlockedLevel}
@@ -1492,6 +1807,7 @@ export default function App() {
                     onLevelComplete={(lvlNum) => completeLevel(lvlNum)}
                     onResetProgress={resetAllLevelsProgress}
                     LEARNING_LEVELS={LEARNING_LEVELS}
+                    onForceSaveProgress={handleForceSaveProgress}
                   />
                 )}
 
@@ -1744,7 +2060,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 2. SYNC CODE GENERATOR / LOADER MODAL */}
+      {/* 2. GOOGLE DRIVE BACKUP & RESTORE MODAL */}
       {showSyncModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 text-slate-800" dir="rtl">
           <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-5 relative overflow-hidden text-right">
@@ -1752,7 +2068,6 @@ export default function App() {
             <button
               onClick={() => {
                 setShowSyncModal(false);
-                setSyncInputCode("");
               }}
               className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full cursor-pointer transition-colors text-sm font-bold"
             >
@@ -1761,109 +2076,116 @@ export default function App() {
 
             <div className="space-y-1.5">
               <span className="text-xs bg-purple-100 text-purple-950 font-black px-3.5 py-1 rounded-full border border-purple-200 inline-block">
-                مزامنة التقدم الدراسي 🔄
+                النسخ الاحتياطي السحابي التلقائي ☁️
               </span>
-              <h3 className="text-xl font-black text-purple-950">توليد واستعادة نقاطك</h3>
+              <h3 className="text-xl font-black text-purple-950">مساحة Google Drive App Data</h3>
               <p className="text-xs text-slate-500 font-bold leading-relaxed">
-                استخدم كود المزامنة المكون من 6 أرقام لنقل المستويات والكلمات والنقاط بالكامل بين أجهزتك المفضلة بكل سهولة!
+                حافظ على تقدمك الدراسي، مجلد الكلمات الصعبة، النقاط، والأوسمة آمنة بنسبة 100% داخل مساحتك الخاصة على Google Drive واستعدها من أي جهاز متاح بنقرة واحدة!
               </p>
             </div>
 
-            {/* الخانة الأولى: توليد كود المزامنة */}
-            <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100/50 space-y-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[14px] font-black text-purple-950">🔑 الخانة الأولى: توليد الرمز الخاص بك</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
-                اضغط على الزر أدناه لتحديث وتخزين بياناتك بسحابة التطبيق وتوليد كود مزامنة جديد مخصص لك لحماية تقدمك:
-              </p>
-              
-              <button
-                type="button"
-                disabled={isSyncing}
-                onClick={() => {
-                  console.log("Button clicked: Generate new sync code inside modal");
-                  saveProgressToFirestore(false);
-                }}
-                className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-300 text-white font-black text-xs py-2.5 px-4 rounded-xl active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                {isSyncing ? "🔄 جاري معالجة السحابة وتوليد الكود..." : "🔄 قم بتوليد كود مزامنة جديد"}
-              </button>
-
-              {currentSyncCode ? (
-                <div className="bg-white border border-purple-200 rounded-xl p-3 flex flex-col items-center gap-2.5 shadow-inner">
-                  <span className="text-[10px] font-black text-purple-700">الرمز الخاص بك الآن هو:</span>
-                  <div className="text-3xl font-black font-mono tracking-widest text-purple-950 px-5 py-1">
-                    {currentSyncCode}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(currentSyncCode);
-                        alert("📋 تم نسخ رمز المزامنة المكون من 6 أرقام بنجاح!");
-                      }}
-                      className="bg-purple-100 hover:bg-purple-200 text-purple-950 font-black text-[11px] py-1 px-3 rounded-lg active:scale-95 transition-all cursor-pointer"
-                    >
-                      نسخ الرمز 📋
-                    </button>
-                    <span className="text-[10px] text-pink-600 bg-pink-50 font-black px-2 py-0.5 rounded-lg border border-pink-100">
-                      ⏱️ صالح لمدة 30 دقيقة فقط
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-2 text-[11px] text-slate-400 font-bold">
-                  لم يتم توليد رمز للمتصفح الحالي بعد
-                </div>
-              )}
-            </div>
-
-            {/* الخانة الثانية: ادخال الكود من جوال آخر */}
-            <div className="bg-pink-50/40 p-4 rounded-2xl border border-pink-100/30 space-y-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[14px] font-black text-pink-950">📱 الخانة الثانية: إدخال الكود من جهاز آخر</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
-                ادخل الكود المكون من 6 أرقام للمتصفح المفتوح على جوالك الآخر لاسترجاع واستيراد تقدمك بالكامل:
-              </p>
-              
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  dir="ltr"
-                  maxLength={6}
-                  placeholder="أدخل الرمز (6 أرقام)"
-                  className="flex-1 bg-white border border-slate-250 rounded-xl px-3 py-2 text-xs font-black focus:outline-none focus:ring-2 focus:ring-pink-500 text-center font-mono placeholder:font-sans placeholder:text-slate-400"
-                  value={syncInputCode}
-                  onChange={(e) => setSyncInputCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                />
+            {!isLoggedIn ? (
+              <div className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 text-center space-y-4">
+                <p className="text-xs font-black text-amber-900 leading-relaxed">
+                  ⚠️ يرجى تسجيل الدخول بحساب Google أولاً لتمكين عمليات النسخ السحابي واستعادة التقدم بنقرة واحدة.
+                </p>
                 <button
                   type="button"
                   onClick={async () => {
-                    console.log("Button clicked: Verify sync code clicked (استعادة)", { syncInputCode });
-                    if (!syncInputCode || syncInputCode.length !== 6) {
-                      alert("⚠️ يرجى إدخال رمز المزامنة المكون من 6 أرقام بالكامل.");
-                      return;
-                    }
-                    const success = await loadSyncCode(syncInputCode);
-                    if (success) {
-                      setShowSyncModal(false);
-                      setSyncInputCode("");
-                    }
+                    await handleGoogleSignIn();
                   }}
-                  className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2.5 rounded-xl text-xs font-black cursor-pointer active:scale-95 transition-all text-center shrink-0"
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black text-xs py-3 px-4 rounded-xl active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  استعادة 📥
+                  <span>🔑 تسجيل الدخول باستخدام حساب Google</span>
                 </button>
               </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Connection Status Card */}
+                {!driveToken ? (
+                  <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 space-y-3">
+                    <div className="flex items-center gap-1.5 text-blue-900 font-black text-xs">
+                      <span>🔗 حساب Google متصل</span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-bold leading-normal">
+                      يرجى تفويض الاتصال بـ Google App Data للاتصال بنظام النسخ الاحتياطي التلقائي وسحب آخر نسخة متوفرة:
+                    </p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleGoogleSignIn();
+                      }}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl active:scale-95 transition-all cursor-pointer"
+                    >
+                      ربط وتفعيل ومزامنة Google Drive 🔄
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
+                      <span className="text-xs font-black text-emerald-900">🟢 متصل بنجاح بمساحتك الخاصة على Drive</span>
+                    </div>
 
-              <div className="text-[10px] text-slate-400 font-bold flex flex-col gap-1 text-center border-t border-dashed border-pink-100/50 pt-2.5">
-                <span>🔐 ميزة الفرادة والأمان مفعلة:</span>
-                <span>لا يمكن لأي طالب استخدام كود طالب آخر. يجب أن يتطابق الرقم المميز للحساب المرتبط بكل كود.</span>
+                    <div className="bg-white/80 rounded-xl p-3 border border-emerald-100/40 space-y-1.5 text-[11px] font-bold text-slate-700">
+                      <div className="flex justify-between border-b border-dashed border-slate-100 pb-1.5 text-slate-500">
+                        <span>النسخة الاحتياطية المتوفرة:</span>
+                        <span className="text-emerald-950 font-black">
+                          {cloudDriveBackup ? "موجودة ☁️" : "لا توجد نسخة سحابية"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>آخر تحديث بالدرايف:</span>
+                        <span className="text-slate-900 text-left" dir="ltr">
+                          {cloudDriveBackup ? new Date(cloudDriveBackup.updatedAt).toLocaleString("ar-EG") : "-"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>المستوى السحابي:</span>
+                        <span className="text-slate-900">
+                          {cloudDriveBackup ? cloudDriveBackup.level : "-"}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>إجمالي النقاط:</span>
+                        <span className="text-purple-900 font-black">
+                          {cloudDriveBackup ? `${cloudDriveBackup.points} نقطة` : "-"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Control Action Buttons */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <button
+                    type="button"
+                    disabled={isBackupLoading}
+                    onClick={() => backupToGoogleDriveNow()}
+                    className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-purple-350 text-white font-black text-xs py-3 px-4 rounded-xl active:scale-[0.97] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    {isBackupLoading ? "🔄 جاري النسخ..." : "📤 نسخ احتياطي الآن"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={isRestoreLoading}
+                    onClick={() => {
+                      if (window.confirm("⚠️ هل أنت متأكد من رغبتك في استعادة التقدم الدراسي الآن واستبدال تقدمك على هذا الجهاز بالكامل بالبيانات المخزنة سحابياً؟")) {
+                        restoreFromGoogleDriveNow();
+                      }
+                    }}
+                    className="w-full bg-pink-600 hover:bg-pink-700 disabled:bg-pink-350 text-white font-black text-xs py-3 px-4 rounded-xl active:scale-[0.97] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    {isRestoreLoading ? "🔄 جاري الاستعادة..." : "📥 استعادة التقدم"}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
+            <div className="text-[10px] text-slate-400 font-bold border-t border-dashed border-slate-100 pt-3 text-center">
+              🔒 خصوصية وأمان تام تضمنها Google: تطبيق StitchLab لا يستطيع الوصول لأي ملفات خارج البيانات الخاصة به.
+            </div>
           </div>
         </div>
       )}
@@ -1892,7 +2214,7 @@ export default function App() {
 
             <div className="grid grid-cols-1 gap-3.5">
               
-              {/* Option 1: Sync Code */}
+               {/* Option 1: Google Drive Cloud Backup */}
               <button
                 type="button"
                 onClick={() => {
@@ -1902,11 +2224,11 @@ export default function App() {
                 className="w-full flex items-center gap-4 p-4 rounded-2xl border border-purple-100 hover:border-purple-200 bg-purple-50/20 hover:bg-purple-50/55 transition-all text-right cursor-pointer group"
               >
                 <div className="w-11 h-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 shrink-0 group-hover:scale-110 transition-transform">
-                  <span className="text-lg">🔄</span>
+                  <span className="text-lg">☁️</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-purple-950">كود المزامنة والنسخ الفوري 🔑</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">توليد رمز مكون من 6 أرقام لنقل أو استيراد نقاطك ومستوياتك بنقرة واحدة.</p>
+                  <h4 className="text-sm font-black text-purple-950">النسخ الاحتياطي السحابي (Google Drive) ☁️</h4>
+                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تفعيل وحفظ واستعادة تقدمك الدراسي ونقاطك آلياً داخل مساحة Google الدراسية الآمنة.</p>
                 </div>
               </button>
 
@@ -1968,6 +2290,114 @@ export default function App() {
 
             <div className="text-[10px] text-slate-400 font-bold flex flex-col gap-1 text-center border-t border-dashed border-slate-100 pt-3">
               <span>🔒 الأمان والمزامنة: جميع بياناتك مُشفرة وآمنة بالكامل بسحابة التطبيق.</span>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ⚔️ GORGEOUS RESPONSIVE CHALLENGE ACCEPTANCE MODAL */}
+      {showChallengeModal && challengeChallenger && (
+        <div className="fixed inset-0 bg-[#090816]/75 backdrop-blur-xl z-50 flex items-center justify-center p-4" dir="rtl">
+          <div className="bg-gradient-to-b from-[#191535] to-[#0d0a20] text-white rounded-[32px] max-w-md w-full border-2 border-amber-400/80 shadow-[0_0_50px_rgba(245,158,11,0.25)] p-6 md:p-8 space-y-6 relative overflow-hidden animate-fadeIn text-center">
+            
+            {/* Ambient background glow orb */}
+            <div className="absolute top-[-20%] left-[-20%] w-44 h-44 bg-purple-600/30 rounded-full blur-[60px] pointer-events-none"></div>
+            <div className="absolute bottom-[-20%] right-[-20%] w-44 h-44 bg-pink-600/20 rounded-full blur-[60px] pointer-events-none"></div>
+
+            {/* Glowing Trophy / Sword Seal */}
+            <div className="relative mx-auto w-20 h-20 bg-gradient-to-tr from-amber-400 to-amber-200 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/25 animate-bounce" style={{ animationDuration: "3s" }}>
+              <span className="text-4xl">⚔️</span>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl md:text-2xl font-black text-amber-300 font-sans tracking-tight">قُبِلت المبارزة! تحدّي تعلَم جديد ⚔️🔥</h3>
+              <p className="text-xs text-purple-200 font-bold tracking-wide leading-relaxed">
+                دعوة مبارزة وتنافس تفاعلية حية حصرية على StitchLab منصة الذكاء الاصطناعي
+              </p>
+            </div>
+
+            <div className="bg-white/5 p-4 rounded-2xl border border-white/10 text-right space-y-2.5">
+              <p className="text-sm font-semibold text-slate-100 leading-relaxed">
+                لقد تحدّاك الطالب المتميّز <span className="text-pink-400 font-black underline decoration-2">{challengeChallenger}</span> في تعلّم الكلمات والطلاقة والحصول على المركز الأول!
+              </p>
+              <div className="text-[11px] text-amber-200/90 font-extrabold flex items-center gap-1.5">
+                <span>🏆</span>
+                <span>عند قبول التحدي، سيتم ربط حسابكما في لوحة المنافسين ومكافأة الفائزين بنقاط إضافية!</span>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="grid grid-cols-2 gap-3.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    // Save to resolved list
+                    const resolved = JSON.parse(localStorage.getItem("stitchlab_resolved_challenges") || "[]");
+                    if (!resolved.includes(challengeChallenger)) {
+                      resolved.push(challengeChallenger);
+                    }
+                    localStorage.setItem("stitchlab_resolved_challenges", JSON.stringify(resolved));
+
+                    // Add opponent entry
+                    const linked = JSON.parse(localStorage.getItem("stitchlab_linked_opponents") || "[]");
+                    if (!linked.some((o: any) => o.name === challengeChallenger)) {
+                      linked.push({
+                        name: challengeChallenger,
+                        timestamp: new Date().toLocaleDateString("ar-EG"),
+                        opponentLevel: "Intermediate",
+                        wordsCount: Math.floor(Math.random() * 25) + 15,
+                        pointsScored: Math.floor(Math.random() * 220) + 70
+                      });
+                      localStorage.setItem("stitchlab_linked_opponents", JSON.stringify(linked));
+                    }
+
+                    // Dispatch reload event
+                    window.dispatchEvent(new Event("stitchlab_challenge_accepted"));
+                    setShowChallengeModal(false);
+
+                    // Celebrate!
+                    try {
+                      playAudioFeedback(true);
+                    } catch (e) {}
+
+                    import("canvas-confetti").then((m) => {
+                      m.default({
+                        particleCount: 120,
+                        spread: 70,
+                        origin: { y: 0.65 },
+                        colors: ["#F59E0B", "#D946EF", "#10B981"]
+                      });
+                    });
+                  } catch (err) {
+                    console.warn(err);
+                    setShowChallengeModal(false);
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-600 hover:to-amber-500 text-slate-950 text-xs font-black py-3.5 px-4 rounded-xl transition-all shadow-md shadow-amber-500/10 cursor-pointer active:scale-95"
+              >
+                أقبل التحدي! 🤝
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    const resolved = JSON.parse(localStorage.getItem("stitchlab_resolved_challenges") || "[]");
+                    if (!resolved.includes(challengeChallenger)) {
+                      resolved.push(challengeChallenger);
+                    }
+                    localStorage.setItem("stitchlab_resolved_challenges", JSON.stringify(resolved));
+                    setShowChallengeModal(false);
+                  } catch (e) {
+                    setShowChallengeModal(false);
+                  }
+                }}
+                className="w-full bg-white/10 hover:bg-white/15 text-slate-300 text-xs font-bold py-3.5 px-4 rounded-xl transition-all cursor-pointer active:scale-95"
+              >
+                لاحقاً ⏱️
+              </button>
             </div>
 
           </div>

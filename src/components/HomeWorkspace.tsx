@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
 import staticSheetWords from "../data/staticSheetWords.json";
+import { auth } from "../firebaseClient";
 import confetti from "canvas-confetti";
 
 
@@ -36,6 +37,12 @@ interface HomeWorkspaceProps {
   completedWordsCount: number;
   setCompletedWordsCount?: React.Dispatch<React.SetStateAction<number>>;
   studentSemester?: string;
+  onForceSaveProgress?: (overrides?: Partial<{
+    completedGroups: string[];
+    completedWordsCount: number;
+    unlockedLevel: number;
+    completedLevels: number[];
+  }>) => void;
 }
 
 interface SheetWord {
@@ -377,7 +384,8 @@ export default function HomeWorkspace({
   setCompletedGroupsProp,
   completedWordsCount,
   setCompletedWordsCount,
-  studentSemester = "الفصل الدراسي الأول"
+  studentSemester = "الفصل الدراسي الأول",
+  onForceSaveProgress
 }: HomeWorkspaceProps) {
   const [sheetWords, setSheetWords] = useState<SheetWord[]>(() => {
     const saved = localStorage.getItem("stitchlab_sheet_words");
@@ -496,6 +504,177 @@ export default function HomeWorkspace({
   });
 
   const completedGroups = completedGroupsProp !== undefined ? completedGroupsProp : completedGroupsLocal;
+  const [shakingGroupKey, setShakingGroupKey] = useState<string | null>(null);
+
+  // ⚔️ Challenger / Competitor states
+  const [opponents, setOpponents] = useState<{ name: string; timestamp: string; opponentLevel: string; wordsCount: number; pointsScored: number }[]>([]);
+  const [shareModalOpen, setShareModalOpen] = useState<boolean>(false);
+  const [generatedImage, setGeneratedImage] = useState<string>("");
+  const [shareUrl, setShareUrl] = useState<string>("");
+  const [isGeneratingShare, setIsGeneratingShare] = useState<boolean>(false);
+
+  // Load opponents on mount & listen to acceptance event
+  useEffect(() => {
+    const loadOpponents = () => {
+      try {
+        const stored = localStorage.getItem("stitchlab_linked_opponents");
+        if (stored) {
+          setOpponents(JSON.parse(stored));
+        } else {
+          setOpponents([]);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    };
+    loadOpponents();
+    window.addEventListener("stitchlab_challenge_accepted", loadOpponents);
+    return () => window.removeEventListener("stitchlab_challenge_accepted", loadOpponents);
+  }, []);
+
+  const generateChallengeCard = async () => {
+    setIsGeneratingShare(true);
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 800;
+      canvas.height = 500;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not construct 2D context");
+
+      // 1. Lux dark background gradient
+      const grad = ctx.createLinearGradient(0, 0, 800, 500);
+      grad.addColorStop(0, "#0f0c29"); // Dark sapphire
+      grad.addColorStop(0.5, "#30103b"); // Deep twilight purple
+      grad.addColorStop(1, "#24243e"); // Dark blueish indigo
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 800, 500);
+
+      // 2. Glowing glass spheres / ambient elements
+      ctx.fillStyle = "rgba(236,72,153,0.06)";
+      ctx.beginPath();
+      ctx.arc(120, 120, 220, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(139,92,246,0.1)";
+      ctx.beginPath();
+      ctx.arc(680, 380, 260, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 3. High quality neon borders
+      ctx.strokeStyle = "rgba(245,158,11,0.45)"; // Soft golden frame
+      ctx.lineWidth = 14;
+      ctx.strokeRect(7, 7, 786, 486);
+
+      ctx.strokeStyle = "rgba(236,72,153,0.2)"; // Outer pink neon sheen
+      ctx.lineWidth = 4;
+      ctx.strokeRect(14, 14, 772, 472);
+
+      // 4. Logo / Icon loading fallback
+      const studentName = auth.currentUser?.displayName || "طالب مميز";
+      const targetUrl = `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(studentName)}`;
+
+      const drawLogoAndCardText = () => {
+        // App header
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "center";
+        ctx.font = "bold 26px system-ui, -apple-system, sans-serif";
+        ctx.fillText("منصة StitchLab التعليمية 🔮", 400, 85);
+
+        // Core Challenge slogan
+        ctx.fillStyle = "#fde68a"; // gold yellow-200
+        ctx.font = "bold 34px system-ui, -apple-system, sans-serif";
+        ctx.shadowColor = "rgba(245, 158, 11, 0.4)";
+        ctx.shadowBlur = 15;
+        ctx.fillText("هيا نتحدى بعض في التعلم! ⚔️🏆", 400, 155);
+        ctx.shadowBlur = 0; // reset shadow
+
+        // User stats boxes
+        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+        ctx.lineWidth = 2;
+
+        // Stat Card 1 (Level)
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(110, 205, 260, 140, 24);
+        else ctx.rect(110, 205, 260, 140);
+        ctx.fill();
+        ctx.stroke();
+
+        // Stat Card 2 (Count)
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(430, 205, 260, 140, 24);
+        else ctx.rect(430, 205, 260, 140);
+        ctx.fill();
+        ctx.stroke();
+
+        // Left stats values
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "bold 15px system-ui, sans-serif";
+        ctx.fillText("المستوى الأكاديمي الحالي", 240, 245);
+
+        ctx.fillStyle = "#38bdf8"; // sky blue-400
+        ctx.font = "bold 24px system-ui, sans-serif";
+        ctx.fillText(`المستوى ${unlockedLevel} ⭐`, 240, 295);
+
+        // Right stats values
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "bold 15px system-ui, sans-serif";
+        ctx.fillText("إجمالي الكلمات المحفوظة", 560, 245);
+
+        ctx.fillStyle = "#f43f5e"; // hot rose-500
+        ctx.font = "bold 28px system-ui, sans-serif";
+        ctx.fillText(`${completedWordsCount} كلمة 📝`, 560, 295);
+
+        // Footer Brand Text
+        ctx.fillStyle = "#9333ea"; // purple-600
+        ctx.font = "bold 13px system-ui, sans-serif";
+        ctx.fillText("بيئة تعلم ذكية قائمة على المحادثات الحقيقية والتحديات المشوقة 🤖🎓", 400, 410);
+
+        ctx.fillStyle = "#e2e8f0";
+        ctx.font = "14px system-ui, sans-serif";
+        ctx.fillText(`تحداني الطالب: ${studentName}`, 400, 442);
+      };
+
+      const logoImg = new Image();
+      logoImg.crossOrigin = "anonymous";
+      logoImg.onload = () => {
+        try {
+          ctx.drawImage(logoImg, 375, 12, 50, 50);
+        } catch (e) {}
+        drawLogoAndCardText();
+        finishCanvas();
+      };
+
+      logoImg.onerror = () => {
+        // Fallback vector shield
+        ctx.fillStyle = "#ec4899";
+        ctx.beginPath();
+        ctx.arc(400, 35, 20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 14px Arial";
+        ctx.fillText("SL", 400, 40);
+
+        drawLogoAndCardText();
+        finishCanvas();
+      };
+
+      logoImg.src = "https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png";
+
+      const finishCanvas = () => {
+        const dataUrl = canvas.toDataURL("image/png");
+        setGeneratedImage(dataUrl);
+        setShareUrl(targetUrl);
+        setShareModalOpen(true);
+        setIsGeneratingShare(false);
+      };
+
+    } catch (err) {
+      console.error(err);
+      setIsGeneratingShare(false);
+      alert("⚠️ فشل توليد بطاقة التحدي، يرجى المحاولة لاحقاً.");
+    }
+  };
   
   const setCompletedGroups = (newVal: string[] | ((prev: string[]) => string[])) => {
     if (setCompletedGroupsProp) {
@@ -534,9 +713,21 @@ export default function HomeWorkspace({
       if (a.level !== b.level) {
         return a.level - b.level;
       }
-      if (a.semester !== b.semester) {
-        return a.semester.localeCompare(b.semester, "ar");
+      
+      const semOrder = (sem: string) => {
+        const s = sem.trim();
+        if (s.includes("الأول") || s.includes("الاول")) return 1;
+        if (s.includes("الثاني") || s.includes("التاني")) return 2;
+        if (s.includes("الثالث")) return 3;
+        return 99;
+      };
+
+      const orderA = semOrder(a.semester);
+      const orderB = semOrder(b.semester);
+      if (orderA !== orderB) {
+        return orderA - orderB;
       }
+
       return a.group.localeCompare(b.group, "ar");
     });
 
@@ -856,6 +1047,9 @@ export default function HomeWorkspace({
 
       if (currentWordIndex < trainingWords.length - 1) {
         setCurrentWordIndex(prev => prev + 1);
+        if (onForceSaveProgress) {
+          onForceSaveProgress({ completedWordsCount: completedWordsCount });
+        }
       } else {
         // Save completed group key in completed groups!
         const groupKey = `${activeTrainingLevel.number}_${activeTrainingSemester}_${activeTrainingGroup}`;
@@ -866,9 +1060,72 @@ export default function HomeWorkspace({
           localStorage.setItem("stitchlab_completed_groups", JSON.stringify(newCompleted));
         }
 
-        // Mark level as completed!
-        onLevelComplete(activeTrainingLevel.number);
-        setActiveTrainingLevel(null);
+        // Find current level's groups to navigate or switch
+        const currentLevelNumber = activeTrainingLevel.number;
+        const groupsInCurrentLevel = allSortedGroups.filter(g => g.level === currentLevelNumber);
+        const currentGroupIndex = groupsInCurrentLevel.findIndex(g => g.key === groupKey);
+
+        const nextGroup = groupsInCurrentLevel[currentGroupIndex + 1];
+
+        if (nextGroup) {
+          // Transition directly to the next group
+          setActiveTrainingSemester(nextGroup.semester);
+          setActiveTrainingGroup(nextGroup.group);
+          setCurrentWordIndex(0);
+          
+          if (onForceSaveProgress) {
+            onForceSaveProgress({
+              completedGroups: newCompleted,
+              completedWordsCount: completedWordsCount
+            });
+          }
+
+          if (nextGroup.semester !== activeTrainingSemester) {
+            alert(`🎉 رائع جداً! لقد أنهيت جميع مجموعات ${activeTrainingSemester} بنجاح، وظعر/فتح وتم الانتقال المباشر إلى ${nextGroup.semester} تلقائياً لمجموعة: "${nextGroup.group}"! ✨`);
+          } else {
+            alert(`👏 أحسنت صنعاً! لقـد أكملت مجموعة "${activeTrainingGroup}" والآن ينتقل النظام تلقائياً للمجموعة التالية: "${nextGroup.group}".`);
+          }
+        } else {
+          // Finished all semesters in this level (Level Completed)
+          onLevelComplete(currentLevelNumber);
+          
+          const nextLevelNumber = currentLevelNumber + 1;
+          const nextLevelObj = LEARNING_LEVELS.find(l => l.number === nextLevelNumber);
+          
+          const nextCompletedLevels = [...completedLevels];
+          if (!nextCompletedLevels.includes(currentLevelNumber)) {
+            nextCompletedLevels.push(currentLevelNumber);
+          }
+          const nextUnlockedLevel = Math.min(9, currentLevelNumber + 1);
+
+          if (onForceSaveProgress) {
+            onForceSaveProgress({
+              completedGroups: newCompleted,
+              completedWordsCount: completedWordsCount,
+              completedLevels: nextCompletedLevels,
+              unlockedLevel: nextUnlockedLevel
+            });
+          }
+
+          if (nextLevelObj) {
+            const groupsInNextLevel = allSortedGroups.filter(g => g.level === nextLevelNumber);
+            const firstGroupOfNextLevel = groupsInNextLevel[0];
+            
+            if (firstGroupOfNextLevel) {
+              setActiveTrainingLevel(nextLevelObj);
+              setActiveTrainingSemester(firstGroupOfNextLevel.semester);
+              setActiveTrainingGroup(firstGroupOfNextLevel.group);
+              setCurrentWordIndex(0);
+              alert(`🏆 يا لك من بطل! لقد انتهيت من جميع مجموعات "${activeTrainingSemester}" وكامل مسار التعلم الحالي. تم تفعيل المسار التالي بنجاح والانتقال تلقائياً إليه: "${nextLevelObj.title}"! 🌟`);
+            } else {
+              setActiveTrainingLevel(null);
+              alert("🎉 بطل رائع! لقد انتهيت من جميع مجموعات هذا المسار. تم تفعيل المسار التالي بنجاح في الواجهة الرئيسية!");
+            }
+          } else {
+            setActiveTrainingLevel(null);
+            alert("✨ تهانينا الحارة! لقد أنهيت كافة مستويات وفصول المجموعات المتوفرة في المنصة بنجاح تام وبأداء مبهر للغاية! 🎓💖");
+          }
+        }
       }
     };
 
@@ -1210,8 +1467,8 @@ export default function HomeWorkspace({
                     قفل ✕
                   </button>
                 </div>
-                <p className="mt-2.5 text-[10.5px] font-bold text-slate-700 font-sans leading-relaxed">
-                  الكلمات القصيرة مثل (<span className="font-mono text-purple-700 font-black">{currentWord.word}</span>) يصعب على محرك التعرف الصوتي التقاطها بمفردها بدقة. <span className="underline decoration-amber-500 decoration-2 font-black text-slate-800">توجيه هام:</span> عند ضغط الميكروفون ونطقها، يجب عليك ربطها بضمير مناسب بصوت واضح ومستمر (مثال: انطق <span className="font-black text-purple-800 underline bg-pink-50 px-1 rounded">"I am"</span> بدلاً من نطق "am" بمفردها، أو انطق <span className="font-black text-purple-800 underline bg-pink-50 px-1 rounded">"he is"</span>، أو <span className="font-black text-purple-800 underline bg-pink-50 px-1 rounded">"we were"</span>) ليتعرف عليها النظام ويقيم نطقك بنجاح باهر!
+                <p className="mt-2.5 text-xs font-black text-amber-950 font-sans leading-relaxed">
+                  أضف ضمير عند النطق مثل Iam . He is. was is . were are
                 </p>
               </div>
             )}
@@ -1378,12 +1635,16 @@ export default function HomeWorkspace({
                   const isUnlocked = isGroupSequenceUnlocked(item.key);
                   const isCompleted = completedGroups.includes(item.key);
 
+                  const isShaking = shakingGroupKey === item.key;
+
                   return (
                     <div 
                       key={item.key} 
                       className={`p-3 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-3 ${
-                        isUnlocked 
-                          ? "bg-pink-50/40 border-pink-100 hover:bg-pink-50/80 hover:border-pink-200" 
+                        isShaking
+                          ? "animate-shake border-red-300 bg-red-50/70"
+                          : isUnlocked 
+                          ? "bg-purple-100/90 border-purple-255 text-purple-950 hover:bg-purple-200/50 hover:border-purple-300" 
                           : "bg-slate-50/80 border-slate-150"
                       }`}
                     >
@@ -1401,7 +1662,7 @@ export default function HomeWorkspace({
                                 setCurrentWordIndex(0);
                               }
                             }}
-                            className="bg-pink-500 hover:bg-pink-600 text-white font-black text-[11px] py-1.5 px-3.5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm shadow-pink-100"
+                            className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] py-1.5 px-3.5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm shadow-purple-200"
                           >
                             تأسيس وبدء 🔓
                           </button>
@@ -1409,16 +1670,11 @@ export default function HomeWorkspace({
                           <button
                             type="button"
                             onClick={() => {
-                              const idxInAll = allSortedGroups.findIndex(g => g.key === item.key);
-                              if (idxInAll > 0) {
-                                const prevGroup = allSortedGroups[idxInAll - 1];
-                                alert(`⚠️ هذه المجموعة مغلقة! يجب عليك إنهاء المجموعة السابقة "${prevGroup.group}" أولاً لتتمكن من فتحها.`);
-                              } else {
-                                alert("⚠️ هذه المجموعة مغلقة حالياً.");
-                              }
+                              setShakingGroupKey(item.key);
+                              setTimeout(() => setShakingGroupKey(null), 350);
                             }}
-                            className="bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-500 rounded-xl p-2 shrink-0 cursor-pointer active:scale-95"
-                            title="انقر لمعرفة سبب القفل"
+                            className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-400 rounded-xl p-2 shrink-0 cursor-pointer active:scale-95 animate-pulse"
+                            title="المجموعة مغلقة حالياً"
                           >
                             <Lock className="w-3.5 h-3.5" />
                           </button>
@@ -1475,6 +1731,194 @@ export default function HomeWorkspace({
 
         </div>
       </div>
+
+      {/* ⚔️ لوحة التحديات ولوحة المتصدرين المحلية */}
+      <div className="max-w-md mx-auto mb-6 px-3" dir="rtl" id="stitchlab-challenge-arena">
+        <div className="bg-gradient-to-br from-[#120f2e] to-[#25153a] rounded-[32px] p-5 text-white border-2 border-purple-500/30 shadow-[0_15px_35px_rgba(139,92,246,0.15)] relative overflow-hidden">
+          
+          {/* Ambient decorative patterns */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
+          
+          <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-2xl">⚔️</span>
+              <div>
+                <h3 className="text-sm font-black text-amber-300">ميدان التحديات والمبارزة</h3>
+                <p className="text-[10px] text-purple-200/80 font-bold leading-relaxed">تحدَّ زملائك في الحفظ والمثابرة وأثبت جدارتك!</p>
+              </div>
+            </div>
+            
+            <button
+              type="button"
+              disabled={isGeneratingShare}
+              onClick={generateChallengeCard}
+              className="bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10px] font-black py-2 px-3.5 rounded-xl transition-all shadow active:scale-95 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shrink-0 font-sans"
+            >
+              {isGeneratingShare ? (
+                <>
+                  <RefreshCw className="w-3 h-3 animate-spin text-slate-950" />
+                  <span>انتظر...</span>
+                </>
+              ) : (
+                <>
+                  <span>تحدي صديق 🎨</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Opponents List / Local Leaderboard */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between text-[11px] font-black text-amber-200/90 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+              <span>👤 المنافس المقبول</span>
+              <span>📊 عدد الكلمات / النقاط الكلية</span>
+            </div>
+
+            {opponents.length === 0 ? (
+              <div className="bg-white/5 rounded-2xl p-4 text-center border border-dashed border-white/10 space-y-2">
+                <p className="text-xs text-purple-200/90 font-bold">لا يوجد مبارزون نشطون حالياً في حسابك.</p>
+                <p className="text-[10px] text-slate-300 leading-relaxed">
+                  انقر على زر "تحدي صديق 🎨" لتوليد ومشاركة بطاقة التحدي الخاصة بك! عندما يقبل صديق التحدي، سيتصدر فوراً في ميدانك! 🤝🔥
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
+                {opponents.map((opp, idx) => (
+                  <div 
+                    key={idx}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center text-xs font-black text-pink-300 select-none">
+                        {idx + 1}
+                      </div>
+                      <div className="text-right">
+                        <h4 className="text-xs font-black text-slate-100">{opp.name}</h4>
+                        <span className="text-[9px] text-purple-300 font-bold">تاريخ البدء: {opp.timestamp}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="text-left">
+                        <div className="text-xs font-bold text-amber-300">{opp.wordsCount} كلمة</div>
+                        <div className="text-[9px] text-emerald-400 font-black">{opp.pointsScored} نقطة</div>
+                      </div>
+                      
+                      <button
+                        type="button"
+                        onClick={() => {
+                          alert(`🚀 جاهز لمبارزة "${opp.name}"؟ لنهزم رقمه القياسي، قم بالانضمام لأحد مستويات التعلم المفتوحة وأكمل المجموعات متتالية لتحقيق نقاط أعلى وكسب الصدارة! 🔥`);
+                        }}
+                        className="w-7 h-7 rounded-lg bg-purple-600 hover:bg-purple-500 flex items-center justify-center text-xs text-white shadow-sm transition-colors cursor-pointer"
+                        title="ابدأ مبارزة التعلم"
+                      >
+                        ⚡
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+
+      {/* 🔮 GORGEOUS CANVAS SHARE INTERACTIVE POPUP */}
+      {shareModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-55 flex items-center justify-center p-4 text-slate-900" dir="rtl">
+          <div className="bg-white rounded-[32px] border border-pink-100 shadow-2xl max-w-md w-full p-6 md:p-8 space-y-5 relative overflow-hidden text-right animate-fadeIn">
+            
+            <button
+              type="button"
+              onClick={() => setShareModalOpen(false)}
+              className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full cursor-pointer transition-colors font-bold text-sm"
+            >
+              ✕
+            </button>
+
+            <div className="text-center space-y-1.5 pb-2">
+              <span className="text-3xl">✨🏆</span>
+              <h3 className="text-base font-black text-purple-950">بطاقة التحدي والمشاركة جاهزة!</h3>
+              <p className="text-xs text-slate-500 font-bold">
+                قم بمشاركة الصورة ورابط التحدي مع أصدقائك لبدء المبارزة فوراً
+              </p>
+            </div>
+
+            {/* Generated Canvas Image Preview Option */}
+            <div className="border border-purple-100 rounded-2xl overflow-hidden shadow-sm bg-slate-50">
+              <img 
+                src={generatedImage} 
+                alt="StitchLab Challenge Card" 
+                className="w-full h-auto object-cover max-h-[220px]"
+              />
+            </div>
+
+            {/* Action options */}
+            <div className="grid grid-cols-2 gap-3 pb-3">
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    if (navigator.share) {
+                      const response = await fetch(generatedImage);
+                      const blob = await response.blob();
+                      const file = new File([blob], "stitchlab_challenge.png", { type: "image/png" });
+                      
+                      await navigator.share({
+                        files: [file],
+                        title: "تحدي StitchLab التعليمي",
+                        text: `هيا نتحدى بعض في تعلّم الكلمات والطلاقة بمستويات ذكية! ⚔️🔥`,
+                        url: shareUrl
+                      });
+                      return;
+                    }
+                  } catch (e) {
+                    console.warn(e);
+                  }
+
+                  // Default Fallback: COPY LINK to clipboard
+                  try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    alert("📋 تم نسخ رابط تحدي StitchLab المباشر الخاص بك بنجاح! شاركه الآن مع أصدقائك عبر أي تطبيق محادثة. 💬✨");
+                  } catch (err) {
+                    alert(`احصل على رابط التحدي الخاص بك:\n${shareUrl}`);
+                  }
+                }}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-black py-3 px-4 rounded-xl cursor-pointer shadow-md transition-colors text-center font-sans"
+              >
+                مشاركة وتحدي 📤
+              </button>
+
+              <a
+                href={generatedImage}
+                download="stitchlab_challenge.png"
+                onClick={() => {
+                  // copy automatically
+                  try {
+                    navigator.clipboard.writeText(shareUrl);
+                  } catch (e) {}
+                }}
+                className="w-full bg-pink-500 hover:bg-pink-600 text-white text-xs font-black py-3 px-4 rounded-xl cursor-pointer shadow-md transition-colors text-center block font-sans"
+              >
+                تحميل الصورة 💾
+              </a>
+            </div>
+
+            <div className="bg-purple-50/50 p-3 rounded-xl border border-purple-100/30 text-right space-y-1.5 select-all">
+              <span className="block text-[10px] font-black text-purple-700">رابط الدعوة المباشر الخاص بك:</span>
+              <div className="bg-white px-2 py-1.5 rounded border border-purple-100 text-[10px] font-mono text-purple-950 overflow-x-auto whitespace-nowrap scrollbar-thin">
+                {shareUrl}
+              </div>
+            </div>
+
+            <div className="text-[10px] text-center text-slate-400 font-bold">
+              💡 نصيحة: عند تحميل الصورة، يتم نسخ رابط دعوة التحدي تلقائياً!
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* PWA INSTALL ACTION BANNER */}
       {showInstallBanner && (
@@ -1770,19 +2214,16 @@ export default function HomeWorkspace({
                             return isGroupSequenceUnlocked(gk) && !completedGroups.includes(gk);
                           }) === idx;
 
+                        const isShaking = shakingGroupKey === groupKey;
+
                         return (
                           <button
                             key={grp}
                             type="button"
                             onClick={() => {
                               if (!isUnlocked) {
-                                const idxInAll = allSortedGroups.findIndex(g => g.key === groupKey);
-                                if (idxInAll > 0) {
-                                  const prevGroup = allSortedGroups[idxInAll - 1];
-                                  alert(`⚠️ هذه المجموعة مغلقة! يجب عليك إنهاء المجموعة السابقة "${prevGroup.group}" أولاً لتتمكن من فتحها.`);
-                                } else {
-                                  alert("⚠️ هذه المجموعة مغلقة حالياً.");
-                                }
+                                setShakingGroupKey(groupKey);
+                                setTimeout(() => setShakingGroupKey(null), 350);
                                 return;
                               }
                               setModalGroup(grp);
@@ -1793,13 +2234,15 @@ export default function HomeWorkspace({
                               setSelectedLevel(null);
                             }}
                             className={`w-full text-right p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 relative ${
-                              isActiveFrontier
-                                ? "bg-purple-50/95 border-purple-400 shadow-[0_0_12px_rgba(168,85,247,0.3)] ring-2 ring-purple-400 ring-offset-1"
+                              isShaking 
+                                ? "animate-shake border-red-400 bg-red-50/70 text-red-950" 
+                                : isActiveFrontier
+                                ? "bg-pink-100 border-pink-400 shadow-[0_0_12px_rgba(236,72,153,0.25)] ring-2 ring-pink-400 ring-offset-1 text-pink-950 hover:bg-pink-200/40"
                                 : isCompleted
-                                ? "bg-pink-50/60 border-pink-100 text-pink-700 hover:bg-pink-100/50"
+                                ? "bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100/50"
                                 : isUnlocked
-                                ? "bg-white border-slate-200 hover:border-purple-300 hover:bg-purple-50/10 text-slate-800"
-                                : "bg-slate-50/80 border-slate-200/50 text-slate-400 opacity-80"
+                                ? "bg-purple-100 border-purple-300 hover:bg-purple-200/50 text-purple-950"
+                                : "bg-slate-50/70 border-slate-200/60 text-slate-400 opacity-70 cursor-not-allowed"
                             }`}
                           >
                             <div className="flex items-center gap-2">
@@ -1807,12 +2250,12 @@ export default function HomeWorkspace({
                                 {isCompleted ? "✅" : isUnlocked ? "🎯" : "🔒"}
                               </span>
                               <div className="flex flex-col text-right">
-                                <span className={`text-xs font-black ${isActiveFrontier ? "text-purple-950" : ""}`}>
+                                <span className={`text-xs font-black ${isActiveFrontier ? "text-pink-950" : isUnlocked ? "text-purple-950" : ""}`}>
                                   {grp}
                                 </span>
                                 {isActiveFrontier && (
-                                  <span className="text-[9px] text-purple-700 font-extrabold animate-pulse flex items-center gap-1 mt-0.5">
-                                    <span>●</span> مجموعتك النشطة حالياً
+                                  <span className="text-[9px] text-pink-600 font-extrabold animate-pulse flex items-center gap-1 mt-0.5">
+                                    <span>●</span> المجموعة الجديدة النشطة
                                   </span>
                                 )}
                               </div>
@@ -1820,11 +2263,13 @@ export default function HomeWorkspace({
                             
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               {isCompleted ? (
-                                <span className="text-[9px] bg-pink-100 text-pink-800 font-black px-2 py-0.5 rounded-full border border-pink-200">مكتملة ✨</span>
+                                <span className="text-[9px] bg-emerald-100 text-emerald-800 font-black px-2 py-0.5 rounded-full border border-emerald-200">جاهز ✓</span>
+                              ) : isActiveFrontier ? (
+                                <span className="text-[9px] bg-pink-200 text-pink-800 font-black px-2 py-0.5 rounded-full border border-pink-300">الجديدة 🎀</span>
                               ) : isUnlocked ? (
-                                <span className="text-[9px] bg-purple-100 text-purple-800 font-black px-2 py-0.5 rounded-full border border-purple-250/20">دخول ⚡</span>
+                                <span className="text-[9px] bg-purple-200 text-purple-800 font-black px-2 py-0.5 rounded-full border border-purple-300">مفتوحة 🔓</span>
                               ) : (
-                                <span className="text-[9px] bg-slate-100 text-slate-500 font-black px-2 py-0.5 rounded-full border border-slate-200">
+                                <span className="text-[9px] bg-slate-100 text-slate-400 font-black px-2 py-0.5 rounded-full border border-slate-200">
                                   🔒 مغلقة
                                 </span>
                               )}

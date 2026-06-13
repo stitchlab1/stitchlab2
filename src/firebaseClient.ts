@@ -29,6 +29,8 @@ export const db = getFirestore(app);
 // Initialize Auth
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.addScope("https://www.googleapis.com/auth/drive.appdata");
+googleProvider.addScope("https://www.googleapis.com/auth/drive.file");
 
 // Initialize Analytics safely
 let analytics: any = null;
