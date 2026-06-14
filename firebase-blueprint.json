@@ -36,6 +36,20 @@
         "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of code creation" }
       },
       "required": ["userId", "payload"]
+    },
+    "challenge": {
+      "title": "Student Challenge",
+      "description": "Represents a student join invite challenge with a snapshot image dynamic card.",
+      "type": "object",
+      "properties": {
+        "challengerId": { "type": "string", "description": "Firebase UID of the challenger" },
+        "challengerName": { "type": "string", "description": "Student display name of the challenger" },
+        "points": { "type": "integer", "description": "Points value shown on the challenge card" },
+        "level": { "type": "string", "description": "English proficiency level of the challenger" },
+        "snapshotB64": { "type": "string", "description": "Base64 encoded snapshot screenshot of the student's workspace" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp of challenge creation" }
+      },
+      "required": ["challengerId", "challengerName", "points", "level", "snapshotB64"]
     }
   },
   "firestore": {
@@ -46,6 +60,10 @@
     "sync_codes/{code}": {
       "schema": "sync_code",
       "description": "Collection of 6-digit temporary codes for transferring progress."
+    },
+    "challenges/{challengeId}": {
+      "schema": "challenge",
+      "description": "Challenge cards showing results and scores shared by students."
     }
   }
 }

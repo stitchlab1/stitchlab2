@@ -2,8 +2,16 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
 import staticSheetWords from "../data/staticSheetWords.json";
-import { auth } from "../firebaseClient";
+import { auth, db } from "../firebaseClient";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import html2canvas from "html2canvas";
 import confetti from "canvas-confetti";
+
+const getTodayDateArabic = () => {
+  const d = new Date();
+  const months = ["يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"];
+  return `${d.getDate()} ${months[d.getMonth()]}`;
+};
 
 
 interface LearningLevel {
@@ -535,144 +543,49 @@ export default function HomeWorkspace({
   const generateChallengeCard = async () => {
     setIsGeneratingShare(true);
     try {
-      const canvas = document.createElement("canvas");
-      canvas.width = 800;
-      canvas.height = 500;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Could not construct 2D context");
+      const targetElement = document.getElementById("stitchlab-snapshot-results-card");
+      if (!targetElement) {
+        throw new Error("Target results layout not found");
+      }
 
-      // 1. Lux dark background gradient
-      const grad = ctx.createLinearGradient(0, 0, 800, 500);
-      grad.addColorStop(0, "#0f0c29"); // Dark sapphire
-      grad.addColorStop(0.5, "#30103b"); // Deep twilight purple
-      grad.addColorStop(1, "#24243e"); // Dark blueish indigo
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, 800, 500);
+      // Render with html2canvas!
+      const canvas = await html2canvas(targetElement, {
+        useCORS: true,
+        allowTaint: true,
+        scale: 2,
+        backgroundColor: null,
+      });
 
-      // 2. Glowing glass spheres / ambient elements
-      ctx.fillStyle = "rgba(236,72,153,0.06)";
-      ctx.beginPath();
-      ctx.arc(120, 120, 220, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "rgba(139,92,246,0.1)";
-      ctx.beginPath();
-      ctx.arc(680, 380, 260, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 3. High quality neon borders
-      ctx.strokeStyle = "rgba(245,158,11,0.45)"; // Soft golden frame
-      ctx.lineWidth = 14;
-      ctx.strokeRect(7, 7, 786, 486);
-
-      ctx.strokeStyle = "rgba(236,72,153,0.2)"; // Outer pink neon sheen
-      ctx.lineWidth = 4;
-      ctx.strokeRect(14, 14, 772, 472);
-
-      // 4. Logo / Icon loading fallback
+      const snapshotB64 = canvas.toDataURL("image/png");
+      const userId = auth.currentUser?.uid || "unknown";
       const studentName = auth.currentUser?.displayName || "طالب مميز";
-      const targetUrl = `${window.location.origin}${window.location.pathname}?ref=${encodeURIComponent(studentName)}`;
 
-      const drawLogoAndCardText = () => {
-        // App header
-        ctx.fillStyle = "#ffffff";
-        ctx.textAlign = "center";
-        ctx.font = "bold 26px system-ui, -apple-system, sans-serif";
-        ctx.fillText("منصة StitchLab التعليمية 🔮", 400, 85);
+      // Save this challenge to Firestore challenges/[userId] collection!
+      try {
+        const docRef = doc(db, "challenges", userId);
+        await setDoc(docRef, {
+          challengerId: userId,
+          challengerName: studentName,
+          points: completedWordsCount * 10,
+          level: `المستوى ${unlockedLevel}`,
+          snapshotB64: snapshotB64,
+          createdAt: serverTimestamp()
+        });
+        console.log("StitchLab Challenge document saved to Firestore successfully!");
+      } catch (fError) {
+        console.error("Firestore challenge save failed:", fError);
+      }
 
-        // Core Challenge slogan
-        ctx.fillStyle = "#fde68a"; // gold yellow-200
-        ctx.font = "bold 34px system-ui, -apple-system, sans-serif";
-        ctx.shadowColor = "rgba(245, 158, 11, 0.4)";
-        ctx.shadowBlur = 15;
-        ctx.fillText("هيا نتحدى بعض في التعلم! ⚔️🏆", 400, 155);
-        ctx.shadowBlur = 0; // reset shadow
-
-        // User stats boxes
-        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
-        ctx.lineWidth = 2;
-
-        // Stat Card 1 (Level)
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(110, 205, 260, 140, 24);
-        else ctx.rect(110, 205, 260, 140);
-        ctx.fill();
-        ctx.stroke();
-
-        // Stat Card 2 (Count)
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(430, 205, 260, 140, 24);
-        else ctx.rect(430, 205, 260, 140);
-        ctx.fill();
-        ctx.stroke();
-
-        // Left stats values
-        ctx.fillStyle = "#cbd5e1";
-        ctx.font = "bold 15px system-ui, sans-serif";
-        ctx.fillText("المستوى الأكاديمي الحالي", 240, 245);
-
-        ctx.fillStyle = "#38bdf8"; // sky blue-400
-        ctx.font = "bold 24px system-ui, sans-serif";
-        ctx.fillText(`المستوى ${unlockedLevel} ⭐`, 240, 295);
-
-        // Right stats values
-        ctx.fillStyle = "#cbd5e1";
-        ctx.font = "bold 15px system-ui, sans-serif";
-        ctx.fillText("إجمالي الكلمات المحفوظة", 560, 245);
-
-        ctx.fillStyle = "#f43f5e"; // hot rose-500
-        ctx.font = "bold 28px system-ui, sans-serif";
-        ctx.fillText(`${completedWordsCount} كلمة 📝`, 560, 295);
-
-        // Footer Brand Text
-        ctx.fillStyle = "#9333ea"; // purple-600
-        ctx.font = "bold 13px system-ui, sans-serif";
-        ctx.fillText("بيئة تعلم ذكية قائمة على المحادثات الحقيقية والتحديات المشوقة 🤖🎓", 400, 410);
-
-        ctx.fillStyle = "#e2e8f0";
-        ctx.font = "14px system-ui, sans-serif";
-        ctx.fillText(`تحداني الطالب: ${studentName}`, 400, 442);
-      };
-
-      const logoImg = new Image();
-      logoImg.crossOrigin = "anonymous";
-      logoImg.onload = () => {
-        try {
-          ctx.drawImage(logoImg, 375, 12, 50, 50);
-        } catch (e) {}
-        drawLogoAndCardText();
-        finishCanvas();
-      };
-
-      logoImg.onerror = () => {
-        // Fallback vector shield
-        ctx.fillStyle = "#ec4899";
-        ctx.beginPath();
-        ctx.arc(400, 35, 20, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "bold 14px Arial";
-        ctx.fillText("SL", 400, 40);
-
-        drawLogoAndCardText();
-        finishCanvas();
-      };
-
-      logoImg.src = "https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png";
-
-      const finishCanvas = () => {
-        const dataUrl = canvas.toDataURL("image/png");
-        setGeneratedImage(dataUrl);
-        setShareUrl(targetUrl);
-        setShareModalOpen(true);
-        setIsGeneratingShare(false);
-      };
+      const redirectLink = `${window.location.origin}/challenge/${encodeURIComponent(userId)}`;
+      setGeneratedImage(snapshotB64);
+      setShareUrl(redirectLink);
+      setShareModalOpen(true);
+      setIsGeneratingShare(false);
 
     } catch (err) {
-      console.error(err);
+      console.error("StitchLab html2canvas screenshot failed:", err);
       setIsGeneratingShare(false);
-      alert("⚠️ فشل توليد بطاقة التحدي، يرجى المحاولة لاحقاً.");
+      alert("⚠️ فشل التقاط واجهة التحدي بواسطة html2canvas. يرجى المحاولة لاحقاً.");
     }
   };
   
@@ -1054,10 +967,18 @@ export default function HomeWorkspace({
         // Save completed group key in completed groups!
         const groupKey = `${activeTrainingLevel.number}_${activeTrainingSemester}_${activeTrainingGroup}`;
         const newCompleted = [...completedGroups];
+        let newCompletedWordsCount = completedWordsCount;
+        
         if (!newCompleted.includes(groupKey)) {
           newCompleted.push(groupKey);
           setCompletedGroups(newCompleted);
           localStorage.setItem("stitchlab_completed_groups", JSON.stringify(newCompleted));
+          
+          // Complete entire group words at once upon completion and transition
+          newCompletedWordsCount = completedWordsCount + trainingWords.length;
+          if (setCompletedWordsCount) {
+            setCompletedWordsCount(newCompletedWordsCount);
+          }
         }
 
         // Find current level's groups to navigate or switch
@@ -1076,14 +997,8 @@ export default function HomeWorkspace({
           if (onForceSaveProgress) {
             onForceSaveProgress({
               completedGroups: newCompleted,
-              completedWordsCount: completedWordsCount
+              completedWordsCount: newCompletedWordsCount
             });
-          }
-
-          if (nextGroup.semester !== activeTrainingSemester) {
-            alert(`🎉 رائع جداً! لقد أنهيت جميع مجموعات ${activeTrainingSemester} بنجاح، وظعر/فتح وتم الانتقال المباشر إلى ${nextGroup.semester} تلقائياً لمجموعة: "${nextGroup.group}"! ✨`);
-          } else {
-            alert(`👏 أحسنت صنعاً! لقـد أكملت مجموعة "${activeTrainingGroup}" والآن ينتقل النظام تلقائياً للمجموعة التالية: "${nextGroup.group}".`);
           }
         } else {
           // Finished all semesters in this level (Level Completed)
@@ -1101,7 +1016,7 @@ export default function HomeWorkspace({
           if (onForceSaveProgress) {
             onForceSaveProgress({
               completedGroups: newCompleted,
-              completedWordsCount: completedWordsCount,
+              completedWordsCount: newCompletedWordsCount,
               completedLevels: nextCompletedLevels,
               unlockedLevel: nextUnlockedLevel
             });
@@ -1116,14 +1031,11 @@ export default function HomeWorkspace({
               setActiveTrainingSemester(firstGroupOfNextLevel.semester);
               setActiveTrainingGroup(firstGroupOfNextLevel.group);
               setCurrentWordIndex(0);
-              alert(`🏆 يا لك من بطل! لقد انتهيت من جميع مجموعات "${activeTrainingSemester}" وكامل مسار التعلم الحالي. تم تفعيل المسار التالي بنجاح والانتقال تلقائياً إليه: "${nextLevelObj.title}"! 🌟`);
             } else {
               setActiveTrainingLevel(null);
-              alert("🎉 بطل رائع! لقد انتهيت من جميع مجموعات هذا المسار. تم تفعيل المسار التالي بنجاح في الواجهة الرئيسية!");
             }
           } else {
             setActiveTrainingLevel(null);
-            alert("✨ تهانينا الحارة! لقد أنهيت كافة مستويات وفصول المجموعات المتوفرة في المنصة بنجاح تام وبأداء مبهر للغاية! 🎓💖");
           }
         }
       }
@@ -1317,9 +1229,6 @@ export default function HomeWorkspace({
                       setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
                       playAudioFeedback(true);
                       
-                      if (setCompletedWordsCount) {
-                        setCompletedWordsCount(prev => prev + 1);
-                      }
                       try {
                         confetti({
                           particleCount: 50,
@@ -1354,9 +1263,6 @@ export default function HomeWorkspace({
                     setSpellingFeedback({ type: "success", msg: "Great job! 🎉 إجابة صحيحة (أحسنت صنعاً!)" });
                     playAudioFeedback(true);
                     
-                    if (setCompletedWordsCount) {
-                      setCompletedWordsCount(prev => prev + 1);
-                    }
                     try {
                       confetti({
                         particleCount: 50,
@@ -1517,43 +1423,6 @@ export default function HomeWorkspace({
         {/* Bottom Modern Elegant Navigation Bar (Prev left, Next right) */}
         <div className="max-w-md w-full mx-auto flex flex-col gap-2.5 mt-4">
           
-          {currentWordIndex === trainingWords.length - 1 && (
-            <div className="w-full bg-gradient-to-br from-purple-700 via-pink-600 to-indigo-700 rounded-2xl p-4 text-white text-center shadow-lg border border-purple-500/20 animate-fadeIn" dir="rtl">
-              <div className="flex items-center justify-center gap-1.5 mb-2.5">
-                <span className="text-lg">🎉</span>
-                <span className="text-[11px] font-black tracking-wide text-indigo-100 font-sans">لقد وصلت لآخر كلمة في هذه المجموعة!</span>
-              </div>
-              
-              {isCurrentWordFullyCompleted ? (
-                <a 
-                  href="https://www.effectivecpmnetwork.com/ktczatvrx?key=73981497b63984cc0d895e217c1ce2e2"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => {
-                    // Open and trigger the actual level progression in the parent app
-                    setTimeout(() => {
-                      handleNextWord();
-                    }, 800);
-                  }}
-                  className="inline-flex w-full py-3.5 px-4 bg-amber-400 hover:bg-amber-300 text-purple-950 font-black rounded-xl text-xs transition-all shadow-md active:scale-95 text-center flex items-center justify-center gap-2 border border-amber-300 relative overflow-hidden group cursor-pointer animate-pulse"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
-                  <span>🚀 اكمل لننتقل إلى المستوى التالي</span>
-                </a>
-              ) : (
-                <div 
-                  className="w-full py-3.5 px-4 bg-slate-100/10 text-slate-300 font-bold rounded-xl text-xs border border-white/10 cursor-not-allowed text-center"
-                >
-                  🔒 اكمل لننتقل إلى المستوى التالي (يرجى التدرب أولاً)
-                </div>
-              )}
-
-              {!isCurrentWordFullyCompleted && (
-                <p className="text-[10px] text-pink-200/90 font-bold mt-2">⚠️ يرجى نطق وممارسة كتابة الكلمة الحالية أولاً لتفعيل الانتقال!</p>
-              )}
-            </div>
-          )}
-
           <div className="w-full flex justify-between items-center bg-white border border-pink-100 rounded-2xl p-4 shadow-sm">
             {/* Previous (السابق) — Left Side of row in RTL layout */}
             <button
@@ -1572,7 +1441,7 @@ export default function HomeWorkspace({
               onClick={handleNextWord}
               className="py-3 px-5 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 shadow-md active:scale-[0.97] cursor-pointer"
             >
-              <span>{currentWordIndex === trainingWords.length - 1 ? "اكمل لننتقل إلى المستوى التالي 🎓" : "التالي"}</span>
+              <span>{currentWordIndex === trainingWords.length - 1 ? "المجموعة التالية 🎓" : "التالي"}</span>
               <ChevronLeft className="w-4 h-4" />
             </button>
           </div>
@@ -1644,12 +1513,12 @@ export default function HomeWorkspace({
                         isShaking
                           ? "animate-shake border-red-300 bg-red-50/70"
                           : isUnlocked 
-                          ? "bg-purple-100/90 border-purple-255 text-purple-950 hover:bg-purple-200/50 hover:border-purple-300" 
+                          ? "bg-purple-100/90 border-purple-250 text-purple-950 hover:bg-purple-200/55 hover:border-purple-300" 
                           : "bg-slate-50/80 border-slate-150"
                       }`}
                     >
                       {/* Left Block -> action triggers directly if unlocked or locks display */}
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 text-right justify-start w-full">
                         {isUnlocked ? (
                           <button
                             type="button"
@@ -1664,35 +1533,30 @@ export default function HomeWorkspace({
                             }}
                             className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] py-1.5 px-3.5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm shadow-purple-200"
                           >
-                            تأسيس وبدء 🔓
+                            تأسيس الكلمة 🚀
                           </button>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShakingGroupKey(item.key);
-                              setTimeout(() => setShakingGroupKey(null), 350);
-                            }}
-                            className="bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-400 rounded-xl p-2 shrink-0 cursor-pointer active:scale-95 animate-pulse"
-                            title="المجموعة مغلقة حالياً"
-                          >
-                            <Lock className="w-3.5 h-3.5" />
-                          </button>
+                          <span className="text-slate-400 font-bold text-xs flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-slate-400" /> مغلقة
+                          </span>
+                        )}
+                        
+                        <div className="flex flex-col text-right pr-2">
+                          <span className="text-xs font-black text-slate-800">{item.group}</span>
+                          <span className="text-[9px] text-purple-600 font-bold">المستوى {item.level} • {item.semester}</span>
+                        </div>
+                      </div>
+
+                      {/* Right side completions info */}
+                      <div className="flex items-center gap-1 text-slate-500 text-[10px] font-bold">
+                        {isCompleted ? (
+                          <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-250">مكتمل ✓</span>
+                        ) : isUnlocked ? (
+                          <span className="bg-purple-150 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">غير مكتمل</span>
+                        ) : (
+                          <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full border border-slate-200">مغلق</span>
                         )}
                       </div>
-
-                      {/* Right Block -> name and metadata metadata constraints */}
-                      <div className="text-right space-y-1">
-                        <div className="flex items-center gap-1.5 justify-end">
-                          {isCompleted && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-black">جاهز ✓</span>}
-                          <h5 className="text-xs font-black text-slate-800">{item.group}</h5>
-                        </div>
-                        <div className="flex items-center gap-1.5 justify-end text-[9px] text-slate-500 font-bold">
-                          <span className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 font-semibold">{item.semester}</span>
-                          <span className="bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded select-none">المستوى {item.level}</span>
-                        </div>
-                      </div>
-
                     </div>
                   );
                 })}
@@ -1702,125 +1566,110 @@ export default function HomeWorkspace({
         </div>
       </div>
 
-      {/* 📊 STATS CARDS: COMPLETED WORDS & CURRENT SEMESTER (SQUARE BOXES NEXT TO EACH OTHER) */}
-      <div className="max-w-md mx-auto mb-6 px-3" id="completed-words-semester-counter-grid" dir="rtl">
+      {/* 📊 ELEGANT VISIBLE METRICS & STATS GRID */}
+      <div className="max-w-md mx-auto mb-6 px-3" id="visible-stats-panel">
         <div className="grid grid-cols-2 gap-4">
-          
-          {/* Words Count Box */}
-          <div className="bg-white rounded-3xl border border-pink-100/95 hover:border-pink-200 transition-all shadow-[0_8px_30px_rgb(236,72,153,0.03)] p-4 flex flex-col items-center justify-center text-center select-none min-h-[130px]">
+          <div className="bg-white rounded-3xl border border-purple-100/80 p-4 flex flex-col items-center justify-center text-center shadow-xs">
             <div className="text-3xl mb-1.5 filter drop-shadow">📝</div>
             <div className="space-y-0.5">
               <span className="block text-[10px] font-black text-slate-400 tracking-wide">الكلمات المنجزة</span>
-              <div className="text-3xl font-extrabold font-sans text-purple-950 flex items-baseline justify-center gap-1">
-                <span>{completedWordsCount}</span>
-                <span className="text-xs text-pink-500 font-extrabold">كلمة</span>
+              <div className="text-xl font-black text-slate-900 leading-tight">
+                {completedWordsCount}
               </div>
             </div>
           </div>
 
-          {/* Semester Box */}
-          <div className="bg-white rounded-3xl border border-sky-100/95 hover:border-sky-200 transition-all shadow-[0_8px_30px_rgb(56,189,248,0.03)] p-4 flex flex-col items-center justify-center text-center select-none min-h-[130px]">
+          <div className="bg-white rounded-3xl border border-pink-100/80 p-4 flex flex-col items-center justify-center text-center shadow-xs">
+            <div className="text-3xl mb-1.5 filter drop-shadow">⭐</div>
+            <div className="space-y-0.5">
+              <span className="block text-[10px] font-black text-slate-400 tracking-wide">المستوى الحالي</span>
+              <div className="text-xl font-black text-slate-900 leading-tight">
+                المستوى {unlockedLevel}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl border border-sky-100/95 hover:border-sky-205 transition-all p-4 flex flex-col items-center justify-center text-center select-none">
             <div className="text-3xl mb-1.5 filter drop-shadow">📅</div>
             <div className="space-y-0.5">
-              <span className="block text-[10px] font-black text-slate-400 tracking-wide">الترم الدراسي</span>
+              <span className="block text-[10px] font-black text-slate-400 tracking-wide">الفصل الدراسي</span>
               <div className="text-sm font-black text-sky-950 leading-tight">
-                {studentSemester}
+                {getTodayDateArabic()}
               </div>
             </div>
           </div>
 
+          <div className="bg-white rounded-3xl border border-amber-100/80 p-4 flex flex-col items-center justify-center text-center shadow-xs">
+            <div className="text-3xl mb-1.5 filter drop-shadow">🔓</div>
+            <div className="space-y-0.5">
+              <span className="block text-[10px] font-black text-slate-400 tracking-wide">مجموع المجموعات</span>
+              <div className="text-xl font-black text-slate-900 leading-tight">
+                {(unlockedAdvertiserGroups || []).length || 1} مجموعات
+              </div>
+            </div>
+          </div>
         </div>
+
+        {/* Button removed by user request */}
       </div>
 
-      {/* ⚔️ لوحة التحديات ولوحة المتصدرين المحلية */}
-      <div className="max-w-md mx-auto mb-6 px-3" dir="rtl" id="stitchlab-challenge-arena">
-        <div className="bg-gradient-to-br from-[#120f2e] to-[#25153a] rounded-[32px] p-5 text-white border-2 border-purple-500/30 shadow-[0_15px_35px_rgba(139,92,246,0.15)] relative overflow-hidden">
-          
-          {/* Ambient decorative patterns */}
-          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-full blur-2xl pointer-events-none"></div>
-          
-          <div className="flex items-center justify-between mb-4 border-b border-white/10 pb-3">
-            <div className="flex items-center gap-2.5">
-              <span className="text-2xl">⚔️</span>
-              <div>
-                <h3 className="text-sm font-black text-amber-300">ميدان التحديات والمبارزة</h3>
-                <p className="text-[10px] text-purple-200/80 font-bold leading-relaxed">تحدَّ زملائك في الحفظ والمثابرة وأثبت جدارتك!</p>
-              </div>
+      {/* 📸 HIDDEN SNAPSHOT TARGET FOR HTML2CANVAS */}
+      <div 
+        id="stitchlab-snapshot-results-card" 
+        className="fixed top-0 left-[-9999px] w-[500px] p-6 bg-gradient-to-br from-[#120f2e] via-[#1a123a] to-[#25153a] border-4 border-purple-500 rounded-[32px] text-white space-y-6 select-none shadow-2xl"
+        dir="rtl"
+      >
+        <div className="flex items-center justify-between border-b border-white/10 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/10 p-1 flex items-center justify-center">
+              <img 
+                src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" 
+                alt="StitchLab" 
+                className="w-10 h-10 object-contain"
+                referrerPolicy="no-referrer"
+              />
             </div>
-            
-            <button
-              type="button"
-              disabled={isGeneratingShare}
-              onClick={generateChallengeCard}
-              className="bg-amber-400 hover:bg-amber-500 text-slate-950 text-[10px] font-black py-2 px-3.5 rounded-xl transition-all shadow active:scale-95 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shrink-0 font-sans"
-            >
-              {isGeneratingShare ? (
-                <>
-                  <RefreshCw className="w-3 h-3 animate-spin text-slate-950" />
-                  <span>انتظر...</span>
-                </>
-              ) : (
-                <>
-                  <span>تحدي صديق 🎨</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Opponents List / Local Leaderboard */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-[11px] font-black text-amber-200/90 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
-              <span>👤 المنافس المقبول</span>
-              <span>📊 عدد الكلمات / النقاط الكلية</span>
+            <div>
+              <h2 className="text-lg font-black text-amber-300">StitchLab 🔮</h2>
+              <p className="text-[10px] text-purple-200 font-bold font-sans">المختبر والمدرب التفاعلي الذكي</p>
             </div>
-
-            {opponents.length === 0 ? (
-              <div className="bg-white/5 rounded-2xl p-4 text-center border border-dashed border-white/10 space-y-2">
-                <p className="text-xs text-purple-200/90 font-bold">لا يوجد مبارزون نشطون حالياً في حسابك.</p>
-                <p className="text-[10px] text-slate-300 leading-relaxed">
-                  انقر على زر "تحدي صديق 🎨" لتوليد ومشاركة بطاقة التحدي الخاصة بك! عندما يقبل صديق التحدي، سيتصدر فوراً في ميدانك! 🤝🔥
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[180px] overflow-y-auto pr-1">
-                {opponents.map((opp, idx) => (
-                  <div 
-                    key={idx}
-                    className="flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-all"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-pink-500/20 flex items-center justify-center text-xs font-black text-pink-300 select-none">
-                        {idx + 1}
-                      </div>
-                      <div className="text-right">
-                        <h4 className="text-xs font-black text-slate-100">{opp.name}</h4>
-                        <span className="text-[9px] text-purple-300 font-bold">تاريخ البدء: {opp.timestamp}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <div className="text-left">
-                        <div className="text-xs font-bold text-amber-300">{opp.wordsCount} كلمة</div>
-                        <div className="text-[9px] text-emerald-400 font-black">{opp.pointsScored} نقطة</div>
-                      </div>
-                      
-                      <button
-                        type="button"
-                        onClick={() => {
-                          alert(`🚀 جاهز لمبارزة "${opp.name}"؟ لنهزم رقمه القياسي، قم بالانضمام لأحد مستويات التعلم المفتوحة وأكمل المجموعات متتالية لتحقيق نقاط أعلى وكسب الصدارة! 🔥`);
-                        }}
-                        className="w-7 h-7 rounded-lg bg-purple-600 hover:bg-purple-500 flex items-center justify-center text-xs text-white shadow-sm transition-colors cursor-pointer"
-                        title="ابدأ مبارزة التعلم"
-                      >
-                        ⚡
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
+          <div className="text-left animate-pulse">
+            <span className="text-[10px] bg-pink-500/20 text-pink-300 border border-pink-400/30 px-2.5 py-1 rounded-full font-black">
+              تحدي دراسي ⚔️
+            </span>
+          </div>
+        </div>
 
+        <div className="text-center py-2">
+          <h3 className="text-xl font-extrabold text-white">هل تستطيع كسر رقمي القياسي؟ 📊🔥</h3>
+          <p className="text-xs text-slate-300 font-semibold mt-1">
+            مبارزة وتحدي في حفظ الكلمات وممارسة التحدث بطلاقة!
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
+            <span className="text-[10px] font-bold text-purple-300">الكلمات المنجزة 📝</span>
+            <div className="text-2xl font-black text-amber-300 font-sans">{completedWordsCount}</div>
+          </div>
+          <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
+            <span className="text-[10px] font-bold text-purple-300">المستوى الحالي ⭐</span>
+            <div className="text-2xl font-black text-cyan-300 font-sans">المستوى {unlockedLevel}</div>
+          </div>
+          <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
+            <span className="text-[10px] font-bold text-purple-300">الفصل الدراسي 📅</span>
+            <div className="text-xs font-black text-white leading-tight mt-1 truncate">{studentSemester || "الفصل الدراسي الأول"}</div>
+          </div>
+          <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
+            <span className="text-[10px] font-bold text-purple-300">مجموع المجموعات 🔓</span>
+            <div className="text-xl font-black text-pink-300 font-sans">{(unlockedAdvertiserGroups || []).length || 1} مجموعات</div>
+          </div>
+        </div>
+
+        <div className="border-t border-white/10 pt-4 text-center space-y-1">
+          <p className="text-xs font-extrabold text-purple-200">صاحب الرصيد: {auth.currentUser?.displayName || "طالب مميز"}</p>
+          <p className="text-[9px] text-slate-400">انضم إلي وشعر بمتعة التعلم الحقيقية StitchLab</p>
         </div>
       </div>
 
@@ -1868,7 +1717,7 @@ export default function HomeWorkspace({
                       await navigator.share({
                         files: [file],
                         title: "تحدي StitchLab التعليمي",
-                        text: `هيا نتحدى بعض في تعلّم الكلمات والطلاقة بمستويات ذكية! ⚔️🔥`,
+                        text: "أنا اتعلم في stitchlab هل تريد ان تكون صديقي في الدراسة",
                         url: shareUrl
                       });
                       return;

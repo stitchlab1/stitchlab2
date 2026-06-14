@@ -48,7 +48,9 @@ import {
   getDocFromCache,
   setDoc, 
   updateDoc,
-  serverTimestamp 
+  serverTimestamp,
+  collection,
+  getDocs
 } from "firebase/firestore";
 import { findBackupFile, getBackupContent, saveBackup, type BackupPayload } from "./lib/googleDriveService";
 import HomeWorkspace from "./components/HomeWorkspace";
@@ -56,6 +58,7 @@ import confetti from "canvas-confetti";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
 import LearningTimer from "./components/LearningTimer";
+import html2canvas from "html2canvas";
 
 // Import newly refactored dynamic panels
 import ChatPanel from "./components/ChatPanel";
@@ -106,18 +109,67 @@ export default function App() {
   // Save feedback state for snackbar
   const [saveStatus, setSaveStatus] = useState<{ show: boolean; success: boolean; message: string } | null>(null);
 
-  // Deep-linking capture: store parameter "ref" as the challenger reference
+  // Deep-linking capture and Dynamic Route challenge document fetching
   useEffect(() => {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const refParam = urlParams.get("ref") || urlParams.get("v");
-      if (refParam) {
-        localStorage.setItem("stitchlab_challenger_ref", refParam);
-        console.log("StitchLab Deep Link: Stored challenger reference:", refParam);
+    const handleDynamicChallengeLoad = async () => {
+      try {
+        const pathname = window.location.pathname;
+        const match = pathname.match(/^\/challenge\/([^/]+)/);
+        let challengeId = "";
+        
+        if (match) {
+          challengeId = decodeURIComponent(match[1]);
+        } else {
+          const urlParams = new URLSearchParams(window.location.search);
+          challengeId = urlParams.get("challenge") || urlParams.get("id") || "";
+        }
+
+        if (challengeId) {
+          console.log("StitchLab Challenge system active. ID detected:", challengeId);
+          localStorage.setItem("stitchlab_challenge_id", challengeId);
+          
+          // Dynamically import Firestore getDoc function and execute
+          const challengeRef = doc(db, "challenges", challengeId);
+          const challengeSnap = await getDoc(challengeRef);
+          if (challengeSnap.exists()) {
+            const challengeData = challengeSnap.data();
+            console.log("StitchLab loaded challenge card from Firestore:", challengeData);
+            setActiveChallenge({
+              id: challengeId,
+              ...challengeData
+            });
+            setShowChallengeLanding(true);
+            
+            // Set the challenger reference so standard checkChallenge triggers if needed
+            localStorage.setItem("stitchlab_challenger_ref", challengeData.challengerName || "طالب مميز");
+          } else {
+            console.warn("No active challenge document in Firestore under key:", challengeId);
+          }
+        } else {
+          // Standard ref query backup check
+          const urlParams = new URLSearchParams(window.location.search);
+          const refParam = urlParams.get("ref") || urlParams.get("v");
+          if (refParam) {
+            localStorage.setItem("stitchlab_challenger_ref", refParam);
+          }
+        }
+
+        // Capture StitchLab Academy invitation details
+        const urlParams = new URLSearchParams(window.location.search);
+        const academyInvite = urlParams.get("academyInvite");
+        const inviterName = urlParams.get("inviterName");
+        if (academyInvite) {
+          console.log("StitchLab Academy Invite Detected! Inviter ID:", academyInvite);
+          localStorage.setItem("stitchlab_academy_invite_id", academyInvite);
+          if (inviterName) {
+            localStorage.setItem("stitchlab_academy_inviter_name", decodeURIComponent(inviterName));
+          }
+        }
+      } catch (e) {
+        console.warn("StitchLab Challenge deep link resolution error:", e);
       }
-    } catch (e) {
-      console.warn("StitchLab: Failed to parse ref query parameter:", e);
-    }
+    };
+    handleDynamicChallengeLoad();
   }, []);
 
   useEffect(() => {
@@ -175,6 +227,73 @@ export default function App() {
   // Challenge states & modal triggers (Re-ordered after state definitions)
   const [challengeChallenger, setChallengeChallenger] = useState<string | null>(null);
   const [showChallengeModal, setShowChallengeModal] = useState<boolean>(false);
+  const [activeChallenge, setActiveChallenge] = useState<any>(null);
+  const [showChallengeLanding, setShowChallengeLanding] = useState<boolean>(false);
+
+  // StitchLab Academy States & Operations
+  const [academyViewOpen, setAcademyViewOpen] = useState<boolean>(false);
+  const [isGeneratingAcademyInvite, setIsGeneratingAcademyInvite] = useState<boolean>(false);
+  const [academyInviteUrl, setAcademyInviteUrl] = useState<string>("");
+  const [academyInviteImage, setAcademyInviteImage] = useState<string>("");
+  const [classmates, setClassmates] = useState<{ uid: string; name: string; email: string; joinedAt: string }[]>([]);
+  const [loadingClassmates, setLoadingClassmates] = useState<boolean>(false);
+  const [pendingAcademyInvite, setPendingAcademyInvite] = useState<{ id: string; name: string } | null>(null);
+
+  const fetchClassmates = async () => {
+    if (!auth.currentUser) return;
+    setLoadingClassmates(true);
+    try {
+      const q = collection(db, "classrooms", auth.currentUser.uid, "members");
+      const snap = await getDocs(q);
+      const list: any[] = [];
+      snap.forEach((docSnap) => {
+        list.push({
+          uid: docSnap.id,
+          ...docSnap.data()
+        });
+      });
+      setClassmates(list);
+    } catch (err) {
+      console.error("Error fetching classmates:", err);
+    } finally {
+      setLoadingClassmates(false);
+    }
+  };
+
+  const generateAcademyInviteLink = async () => {
+    setIsGeneratingAcademyInvite(true);
+    try {
+      const target = document.getElementById("stitchlab-workspace") || document.body;
+      let imgData = "";
+      if (html2canvas) {
+        const canvas = await html2canvas(target, {
+          useCORS: true,
+          allowTaint: true,
+          scale: 1.1,
+          logging: false
+        });
+        imgData = canvas.toDataURL("image/png");
+        setAcademyInviteImage(imgData);
+      }
+      
+      const uid = auth.currentUser?.uid || "unknown";
+      const studentName = currentUser?.name || auth.currentUser?.displayName || "طالب مميز";
+      const link = `${window.location.origin}/?academyInvite=${uid}&inviterName=${encodeURIComponent(studentName)}`;
+      
+      setAcademyInviteUrl(link);
+      navigator.clipboard.writeText(link);
+    } catch (err) {
+      console.error("StitchLab Academy snapshot failed:", err);
+      // Fallback
+      const uid = auth.currentUser?.uid || "unknown";
+      const studentName = currentUser?.name || auth.currentUser?.displayName || "طالب مميز";
+      const link = `${window.location.origin}/?academyInvite=${uid}&inviterName=${encodeURIComponent(studentName)}`;
+      setAcademyInviteUrl(link);
+      navigator.clipboard.writeText(link);
+    } finally {
+      setIsGeneratingAcademyInvite(false);
+    }
+  };
 
   const checkChallenge = React.useCallback(() => {
     try {
@@ -592,6 +711,19 @@ export default function App() {
 
     return () => unsubscribe();
   }, []);
+
+  // Check for pending StitchLab Academy invitations once logged in
+  useEffect(() => {
+    if (isLoggedIn && auth.currentUser) {
+      const inviteId = localStorage.getItem("stitchlab_academy_invite_id");
+      const inviterName = localStorage.getItem("stitchlab_academy_inviter_name") || "زميلك";
+      
+      // Make sure the student is not joining their own invited class
+      if (inviteId && inviteId !== auth.currentUser.uid) {
+        setPendingAcademyInvite({ id: inviteId, name: inviterName });
+      }
+    }
+  }, [isLoggedIn, currentUser]);
 
   // Once data is loaded for the first time, allow detecting any subsequent state mutations as unsaved changes
   useEffect(() => {
@@ -1792,6 +1924,71 @@ export default function App() {
       ) : !isLoggedIn ? (
         <div className="flex min-h-screen flex-col items-center justify-center p-4 md:p-8 bg-gradient-to-br from-pink-50 via-[#FFF9FB] to-purple-50 text-slate-800 relative overflow-hidden">
           
+          {/* Guest Challenge Invitation Card Overlay */}
+          {showChallengeLanding && activeChallenge && (
+            <div className="fixed inset-0 bg-[#09071f]/95 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto" dir="rtl">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="bg-gradient-to-b from-[#1b1544] to-[#0e0929] border-2 border-purple-500/30 rounded-[32px] p-6 max-w-md w-full shadow-[0_0_50px_rgba(168,85,247,0.3)] text-white space-y-6 relative overflow-hidden text-center my-8"
+              >
+                {/* Close Button */}
+                <button
+                  type="button"
+                  onClick={() => setShowChallengeLanding(false)}
+                  className="absolute top-4 left-4 p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full cursor-pointer transition-colors text-xs font-bold font-sans"
+                >
+                  ✕
+                </button>
+
+                <div className="space-y-1">
+                  <span className="text-xs bg-amber-400 text-slate-950 font-black px-4 py-1.5 rounded-full inline-block animate-pulse">
+                    مبارزة وتحدي نشط ⚔️🏆
+                  </span>
+                  <h3 className="text-xl font-black text-amber-300 pt-2 font-sans tracking-tight">
+                    أنت مدعو لمبارزة {activeChallenge.challengerName}!
+                  </h3>
+                  <p className="text-xs text-purple-200/90 font-bold leading-relaxed">
+                    لقد أرسل لك صديقك بطاقة مهارة لتحدّي الفهم والطلاقة وحفظ الكلمات.
+                  </p>
+                </div>
+
+                {/* html2canvas Snapshot Image View */}
+                {activeChallenge.snapshotB64 && (
+                  <div className="border border-purple-500/20 rounded-2xl overflow-hidden shadow-lg shadow-purple-950/40 bg-[#120e35] relative">
+                    <img 
+                      src={activeChallenge.snapshotB64} 
+                      alt="بطاقة نتائج المتحدي" 
+                      className="w-full h-auto object-contain max-h-[250px] mx-auto md:max-h-[300px]"
+                      referrerPolicy="no-referrer"
+                    />
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0e0929] to-transparent p-2 text-[9px] text-purple-200 font-bold text-center">
+                      📸 نسخة مصوّرة من تحديات الطالب الفعلية
+                    </div>
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="space-y-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowChallengeLanding(false);
+                      try { playAudioFeedback(true); } catch (_) {}
+                    }}
+                    className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white text-xs font-black py-4 px-6 rounded-2xl cursor-pointer active:scale-95 transition-all shadow-md shadow-pink-500/20 font-sans"
+                  >
+                    قبول التحدي والبدء بالتسجيل الآن 🚀
+                  </button>
+                  <p className="text-[9px] text-slate-400 font-semibold leading-normal">
+                    * قم بالتسجيل بحساب Google أو بالبريد الإلكتروني، وسوف يقبل حسابك التحدي تلقائيًا لتظهر في لوحة منافسيه!
+                  </p>
+                </div>
+
+              </motion.div>
+            </div>
+          )}
+
           {/* Ambient luminous flows for modern feel */}
           <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-pink-400/10 rounded-full blur-[120px] pointer-events-none"></div>
           <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-300/10 rounded-full blur-[120px] pointer-events-none"></div>
@@ -1986,40 +2183,28 @@ export default function App() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-
-
-
-
                     
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
                       <span className="text-xs font-black">الطالب: {currentUser?.name || "طالب مميز"}</span>
-                      {auth.currentUser?.uid && (
-                        <span className="text-[10px] text-purple-700 font-bold flex items-center gap-1.5" id="student-uid-indicator">
-                          <span>الرقم المميز:</span>
-                          <span className="font-mono bg-purple-50 px-1.5 py-0.5 rounded text-[10px] select-all border border-purple-100/40">
-                            {auth.currentUser.uid}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(auth.currentUser?.uid || "");
-                              alert("📋 تم نسخ الرقم المميز بنجاح!");
-                            }}
-                            className="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-purple-600 transition-colors inline-flex items-center justify-center cursor-pointer"
-                            title="نسخ الرقم المميز"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        </span>
-                      )}
                     </div>
 
-
+                    <button
+                      type="button"
+                      onClick={() => setShowSettingsModal(true)}
+                      className={`py-1.5 px-3.5 sm:px-4 rounded-xl text-xs font-black transition-all duration-300 flex items-center gap-1.5 border cursor-pointer ${
+                        showSettingsModal
+                          ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 border-transparent shadow-md scale-105"
+                          : "text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-100/60"
+                      }`}
+                    >
+                      <Settings className={`w-3.5 h-3.5 ${showSettingsModal ? "animate-spin" : ""}`} style={showSettingsModal ? { animationDuration: "3s" } : undefined} />
+                      <span>الإعدادات</span>
+                    </button>
 
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="bg-slate-100 hover:bg-slate-250 text-slate-800 py-1.5 px-2.5 sm:px-3 rounded-lg text-xs transition-colors flex items-center gap-1.5 border border-slate-200 cursor-pointer font-bold"
+                      className="bg-slate-100 hover:bg-slate-250 text-slate-800 py-1.5 px-2.5 sm:px-3 rounded-xl text-xs transition-colors flex items-center gap-1.5 border border-slate-200 cursor-pointer font-black"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span className="hidden sm:inline">تسجيل خروج</span>
@@ -2070,7 +2255,42 @@ export default function App() {
                 )}
                 
                 {mainTab === "home" && (
-                  <HomeWorkspace
+                  <>
+                    {/* ⚔️ FLOATING CHALLENGE PENDING LINK BANNER */}
+                    {isLoggedIn && activeChallenge && activeChallenge.challengerId !== auth.currentUser?.uid && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="max-w-md mx-auto mb-6 px-3"
+                        dir="rtl"
+                      >
+                        <div className="bg-gradient-to-r from-amber-500 via-amber-400 to-[#e2ad2b] text-slate-950 p-4 rounded-2xl shadow-xl flex items-center justify-between gap-4 border border-amber-300 animate-pulse">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-xl shrink-0">
+                              ⚔️
+                            </div>
+                            <div className="text-right">
+                              <h4 className="text-xs font-black text-slate-950">مستعد للمنافسة والمبارزة؟ 🏆</h4>
+                              <p className="text-[10px] text-slate-900 font-bold leading-tight mt-0.5">
+                                لقد دعاك صديقك <span className="font-extrabold underline">{activeChallenge.challengerName}</span> للانضمام ومبارزته!
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              // Trigger accept challenge modal properties manually!
+                              setChallengeChallenger(activeChallenge.challengerName);
+                              setShowChallengeModal(true);
+                            }}
+                            className="bg-slate-950 hover:bg-slate-900 text-amber-300 text-[10px] font-black px-3.5 py-2 rounded-xl transition-all active:scale-95 cursor-pointer shrink-0"
+                          >
+                            قبول الانضمام الآن ✨
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                    <HomeWorkspace
                     unlockedLevel={unlockedLevel}
                     completedLevels={completedLevels}
                     currentTickTime={currentTickTime}
@@ -2101,6 +2321,7 @@ export default function App() {
                     LEARNING_LEVELS={LEARNING_LEVELS}
                     onForceSaveProgress={handleForceSaveProgress}
                   />
+                  </>
                 )}
 
                 {mainTab === "training" && (
@@ -2311,35 +2532,19 @@ export default function App() {
               </main>
 
               <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-pink-100 py-3 px-6 shadow-[0_-8px_30px_rgba(236,72,153,0.06)] z-40 w-full">
-                <div className="max-w-md mx-auto flex items-center justify-around gap-4 select-none" dir="rtl">
+                <div className="max-w-md mx-auto flex items-center justify-center select-none" dir="rtl">
                   
                   <button
                     type="button"
                     onClick={() => setMainTab("home")}
-                    className={`flex-1 max-w-[145px] flex flex-col items-center gap-1 py-1.5 px-3 rounded-2xl transition-all duration-350 cursor-pointer ${
+                    className={`w-full max-w-[180px] flex flex-col items-center gap-1 py-1.5 px-3 rounded-2xl transition-all duration-350 cursor-pointer ${
                       mainTab === "home" || mainTab === "training"
                         ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-md scale-105 font-black" 
-                        : "text-slate-500 hover:text-slate-850 hover:bg-slate-100"
+                        : "text-slate-500 hover:text-slate-850 hover:bg-slate-100 border border-transparent hover:border-pink-100"
                     }`}
                   >
                     <BookOpen className="w-4.5 h-4.5" />
                     <span className="text-[10px] font-bold">الرئيسية</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      console.log("Button clicked: Toggle settings modal from bottom navigation bar");
-                      setShowSettingsModal(true);
-                    }}
-                    className={`flex-1 max-w-[145px] flex flex-col items-center gap-1 py-1.5 px-3 rounded-2xl transition-all duration-350 cursor-pointer ${
-                      showSettingsModal
-                        ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 shadow-md scale-105 font-black" 
-                        : "text-slate-500 hover:text-slate-850 hover:bg-slate-100"
-                    }`}
-                  >
-                    <Settings className="w-4.5 h-4.5" />
-                    <span className="text-[10px] font-bold">الإعدادات</span>
                   </button>
 
                 </div>
@@ -2485,104 +2690,253 @@ export default function App() {
       {/* 4. UNIFIED SETTINGS GEAR MODAL */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 text-slate-800" dir="rtl">
-          <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-hidden text-right text-slate-800">
+          <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-hidden text-right text-slate-800 animate-fadeIn">
             
             <button
-              onClick={() => setShowSettingsModal(false)}
+              onClick={() => {
+                setShowSettingsModal(false);
+                setAcademyViewOpen(false);
+              }}
               className="absolute top-4 left-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full cursor-pointer transition-colors text-sm font-bold"
             >
               ✕
             </button>
 
-            <div className="space-y-1.5 border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2 text-purple-950">
-                <Settings className="w-6 h-6 text-purple-600 animate-spin" style={{ animationDuration: "6s" }} />
-                <h3 className="text-xl font-black">إعدادات المنصة والتحكم</h3>
+            {academyViewOpen ? (
+              <div className="space-y-4 animate-fadeIn">
+                {/* Academy Sub-header */}
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2 text-purple-950">
+                    <span className="text-xl">🎓</span>
+                    <h3 className="text-lg font-black text-purple-950">أكاديمية StitchLab</h3>
+                  </div>
+                  <button 
+                    onClick={() => setAcademyViewOpen(false)}
+                    className="py-1 px-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl cursor-pointer font-bold text-xs transition-colors"
+                    type="button"
+                  >
+                    ← عودة للإعدادات
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-slate-500 font-bold leading-relaxed">
+                  أنشئ صفك الدراسي التفاعلي واجمع أصدقاءك لتخوضوا مغامرة دراسية مميزة وذكية معاً!
+                </p>
+
+                <div className="space-y-3.5">
+                  {/* Action 1: Invite classmate */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-50 to-pink-50 border border-purple-100/50 space-y-3 relative overflow-hidden text-right">
+                    <div className="absolute top-[-20%] right-[-10%] w-20 h-20 bg-pink-100/30 rounded-full blur-xl pointer-events-none"></div>
+                    <h4 className="text-[11.5px] font-black text-purple-950">ادع زميلك للانضمام إلى صفك التعليمي في StitchLab 🚀</h4>
+                    
+                    <button
+                      type="button"
+                      disabled={isGeneratingAcademyInvite}
+                      onClick={generateAcademyInviteLink}
+                      className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-black rounded-xl text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      {isGeneratingAcademyInvite ? (
+                        <>
+                          <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin ml-1"></span>
+                          <span>جاري التقاط شاشة الصف...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>📸 التقاط شاشتي وإنشاء الرابط</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Copied link display */}
+                    {academyInviteUrl && (
+                      <div className="pt-3 border-t border-purple-100/70 space-y-2 animate-fadeIn text-right">
+                        {academyInviteImage && (
+                          <div className="border border-purple-100 rounded-xl overflow-hidden shadow-xs bg-slate-900 max-h-[110px] w-full relative">
+                            <img src={academyInviteImage} alt="شاشتك" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-slate-950/20 flex items-center justify-center">
+                              <span className="bg-slate-900/80 text-white text-[9px] px-2 py-0.5 rounded-full font-bold">تم حفظ لقطة شاشة صفك ✓</span>
+                            </div>
+                          </div>
+                        )}
+                        <p className="text-[10px] text-pink-700 font-extrabold leading-normal">
+                          تم نسخ رابط دعوتك بنجاح! شاركه الآن مع صديقك:
+                        </p>
+                        <div className="flex gap-1.5 items-center">
+                          <input 
+                            type="text" 
+                            readOnly 
+                            value={academyInviteUrl} 
+                            className="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-[9px] font-mono text-slate-500 select-all"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(academyInviteUrl);
+                              alert("📋 تم نسخ الرابط بنجاح!");
+                            }}
+                            className="py-1.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black shrink-0 transition-colors cursor-pointer"
+                          >
+                            نسخ
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Action 2: Show joined classmates */}
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5 text-right">
+                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
+                      <span className="text-[11px] font-black text-slate-850">الزملاء المنضمون في صفي 👥</span>
+                      <button
+                        type="button"
+                        onClick={fetchClassmates}
+                        className="text-[10px] font-black text-purple-600 hover:text-purple-700 hover:underline cursor-pointer flex items-center gap-0.5"
+                        disabled={loadingClassmates}
+                      >
+                        🔄 تحديث القائمة
+                      </button>
+                    </div>
+
+                    {loadingClassmates ? (
+                      <div className="text-center py-4 text-[10px] text-slate-400 font-bold animate-pulse">
+                        جاري تحميل الزملاء...
+                      </div>
+                    ) : classmates.length === 0 ? (
+                      <div className="text-center py-4 border border-dashed border-slate-200 bg-white rounded-xl">
+                        <span className="text-slate-400 font-bold text-[9.5px]">لا يوجد زملاء منضمون في صفك حالياً.</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                        {classmates.map((cl, idx) => (
+                          <div key={cl.uid || idx} className="flex items-center justify-between p-2 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6.5 h-6.5 rounded-lg bg-pink-100/65 flex items-center justify-center text-[10px] font-black text-pink-700 select-none">
+                                {idx + 1}
+                              </div>
+                              <div className="text-right">
+                                <h4 className="text-[11px] font-black text-slate-800 leading-none">{cl.name}</h4>
+                                <span className="text-[9px] text-slate-400 block font-normal mt-1 max-w-[150px] truncate">{cl.email || "بريد غير محدد"}</span>
+                              </div>
+                            </div>
+                            <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100/60 px-1.5 py-0.5 rounded-lg font-black leading-none">
+                              منضم ✓
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-slate-500 font-bold leading-relaxed">
-                خصص تجربتك التعليمية، بادر بمزامنة تقدمك، تصفح إنجازاتك الدراسية، أو تواصل مع الدعم الفني مباشرة.
-              </p>
-            </div>
+            ) : (
+              <>
+                <div className="space-y-1.5 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-2 text-purple-950">
+                    <Settings className="w-6 h-6 text-purple-600 animate-spin" style={{ animationDuration: "6s" }} />
+                    <h3 className="text-xl font-black">إعدادات المنصة</h3>
+                  </div>
+                </div>
 
-            <div className="grid grid-cols-1 gap-3.5">
-              
-               {/* Option 1: Google Drive Cloud Backup */}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSettingsModal(false);
-                  setShowSyncModal(true);
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-purple-100 hover:border-purple-200 bg-purple-50/20 hover:bg-purple-50/55 transition-all text-right cursor-pointer group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700 shrink-0 group-hover:scale-110 transition-transform">
-                  <span className="text-lg">☁️</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-purple-950">النسخ الاحتياطي السحابي (Google Drive) ☁️</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تفعيل وحفظ واستعادة تقدمك الدراسي ونقاطك آلياً داخل مساحة Google الدراسية الآمنة.</p>
-                </div>
-              </button>
+                <div className="grid grid-cols-1 gap-4">
+                  {/* Option 1: Student Unique ID with Copy button */}
+                  {auth.currentUser?.uid && (
+                    <div className="w-full flex items-center justify-between p-4 rounded-2xl border border-purple-100 bg-purple-50/20 text-right">
+                      <div className="flex gap-3 items-center">
+                        <div className="w-10 h-10 rounded-xl bg-purple-105 flex items-center justify-center text-purple-700 shrink-0 select-none text-lg">
+                          🆔
+                        </div>
+                        <div className="text-right">
+                          <h4 className="text-xs font-black text-purple-950">الرقم المميز للطالب</h4>
+                          <span className="font-mono bg-white px-2 py-0.5 rounded text-[10px] select-all border border-purple-100/40 inline-block mt-0.5 max-w-[140px] truncate">
+                            {auth.currentUser.uid}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(auth.currentUser?.uid || "");
+                          alert("📋 تم نسخ الرقم المميز بنجاح!");
+                        }}
+                        className="py-1.5 px-3 bg-purple-650 hover:bg-purple-700 text-white rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center cursor-pointer gap-1 text-xs font-black"
+                        title="نسخ الرقم المميز"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>نسخ</span>
+                      </button>
+                    </div>
+                  )}
 
-              {/* Option 2: Achievements */}
-              <button
-                type="button"
-                onClick={() => {
-                  setMainTab("achievements");
-                  setShowSettingsModal(false);
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-200 bg-amber-50/20 hover:bg-amber-50/50 transition-all text-right cursor-pointer group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-110 transition-transform">
-                  <Trophy className="w-5.5 h-5.5 text-amber-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-amber-950">لوحة الإنجازات والوسام 🏆</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تصفح إنجازاتك الدراسية، وكمية الكلمات المحفوظة وإجمالي الأسئلة لليوم.</p>
-                </div>
-              </button>
+                  {/* Option: StitchLab Academy 🎓 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAcademyViewOpen(true);
+                      fetchClassmates();
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-150 hover:border-pink-300 bg-pink-50/15 hover:bg-pink-50/40 transition-all text-right cursor-pointer group"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-pink-100 flex items-center justify-center text-pink-700 shrink-0 group-hover:scale-110 transition-transform">
+                      <span className="text-xl">🎓</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-black text-pink-950">أكاديمية StitchLab 🎓</h4>
+                    </div>
+                  </button>
 
-              {/* Option 3: About Us */}
-              <button
-                type="button"
-                onClick={() => {
-                  setMainTab("about");
-                  setShowSettingsModal(false);
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-indigo-100 hover:border-indigo-200 bg-indigo-50/20 hover:bg-indigo-50/50 transition-all text-right cursor-pointer group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700 shrink-0 group-hover:scale-110 transition-transform">
-                  <Compass className="w-5.5 h-5.5 text-indigo-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-indigo-950">من نحن ورؤيتنا 🔮</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تعرف على منصة StitchLab وأهدافنا لتوفير حلول ذكاء اصطناعي تفاعلية للطلاب.</p>
-                </div>
-              </button>
+                  {/* Option 2: Achievements */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMainTab("achievements");
+                      setShowSettingsModal(false);
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-200 bg-amber-50/20 hover:bg-amber-50/50 transition-all text-right cursor-pointer group"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-110 transition-transform">
+                      <Trophy className="w-5.5 h-5.5 text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-black text-amber-950">لوحة الإنجازات والوسام 🏆</h4>
+                    </div>
+                  </button>
 
-              {/* Option 4: Support */}
-              <button
-                type="button"
-                onClick={() => {
-                  setMainTab("support");
-                  setShowSettingsModal(false);
-                }}
-                className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-100 hover:border-pink-200 bg-pink-50/20 hover:bg-pink-50/50 transition-all text-right cursor-pointer group"
-              >
-                <div className="w-11 h-11 rounded-xl bg-pink-100 flex items-center justify-center text-pink-700 shrink-0 group-hover:scale-110 transition-transform">
-                  <HelpCircle className="w-5.5 h-5.5 text-pink-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
-                  <p className="text-[11px] text-slate-500 mt-0.5 leading-normal">تواصل مع إدارة المنصة، أرسل استفساراتك أو واجهتك مشكلة تقنية فنية.</p>
-                </div>
-              </button>
+                  {/* Option 3: About Us */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMainTab("about");
+                      setShowSettingsModal(false);
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-indigo-100 hover:border-indigo-200 bg-indigo-50/20 hover:bg-indigo-50/50 transition-all text-right cursor-pointer group"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700 shrink-0 group-hover:scale-110 transition-transform">
+                      <Compass className="w-5.5 h-5.5 text-indigo-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-black text-indigo-950">من نحن ورؤيتنا 🔮</h4>
+                    </div>
+                  </button>
 
-            </div>
-
-            <div className="text-[10px] text-slate-400 font-bold flex flex-col gap-1 text-center border-t border-dashed border-slate-100 pt-3">
-              <span>🔒 الأمان والمزامنة: جميع بياناتك مُشفرة وآمنة بالكامل بسحابة التطبيق.</span>
-            </div>
+                  {/* Option 4: Support */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMainTab("support");
+                      setShowSettingsModal(false);
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-100 hover:border-pink-200 bg-pink-50/20 hover:bg-pink-50/50 transition-all text-right cursor-pointer group"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-pink-100 flex items-center justify-center text-pink-700 shrink-0 group-hover:scale-110 transition-transform">
+                      <HelpCircle className="w-5.5 h-5.5 text-pink-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
 
           </div>
         </div>
@@ -2689,6 +3043,102 @@ export default function App() {
                 className="w-full bg-white/10 hover:bg-white/15 text-slate-300 text-xs font-bold py-3.5 px-4 rounded-xl transition-all cursor-pointer active:scale-95"
               >
                 لاحقاً ⏱️
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 🎓 STITCHLAB ACADEMY PARTNER INVITATION DIALOG */}
+      {pendingAcademyInvite && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 text-slate-800" dir="rtl">
+          <div className="bg-white rounded-[32px] max-w-sm w-full border-2 border-pink-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-hidden text-center animate-fadeIn">
+            
+            {/* Soft decorative background circles */}
+            <div className="absolute top-[-10%] right-[-10%] w-24 h-24 bg-purple-100/40 rounded-full blur-xl pointer-events-none"></div>
+            <div className="absolute bottom-[-10%] left-[-10%] w-24 h-24 bg-pink-100/40 rounded-full blur-xl pointer-events-none"></div>
+
+            {/* Icon */}
+            <div className="relative mx-auto w-16 h-16 bg-gradient-to-br from-pink-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-md animate-bounce" style={{ animationDuration: "4s" }}>
+              <span className="text-3xl">🎓</span>
+            </div>
+
+            <div className="space-y-2 text-center">
+              <h3 className="text-xl font-black text-purple-950 font-sans">الانضمام إلى الأكاديمية!</h3>
+              <p className="text-xs text-slate-405 font-bold leading-normal">
+                دعوة حصرية للانضمام مع زميلك الدراسي في StitchLab
+              </p>
+            </div>
+
+            <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100/60 text-right space-y-2">
+              <p className="text-xs font-semibold text-slate-700 leading-relaxed text-center">
+                لقد دعاك زميلك <span className="text-purple-700 font-extrabold">{pendingAcademyInvite.name}</span> للانضمام معًا في صفه التعليمي في <span className="text-pink-600 font-black">أكاديمية StitchLab</span> لمشاركة مسارك وتحفيز تقدمك!
+              </p>
+            </div>
+
+            {/* Action buttons with Reciprocal Link */}
+            <div className="grid grid-cols-2 gap-3.5 pt-1">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!auth.currentUser) return;
+                  try {
+                    const classmateId = pendingAcademyInvite.id; 
+                    const classmateName = pendingAcademyInvite.name; 
+                    const myUid = auth.currentUser.uid;
+                    const myName = currentUser?.name || auth.currentUser.displayName || "طالب مميز";
+                    const myEmail = auth.currentUser.email || "";
+
+                    // Reciprocal addition in Firestore
+                    await setDoc(doc(db, "classrooms", myUid, "members", classmateId), {
+                      name: classmateName,
+                      email: "زميلي المباشر في الأكاديمية",
+                      joinedAt: new Date().toISOString()
+                    });
+
+                    await setDoc(doc(db, "classrooms", classmateId, "members", myUid), {
+                      name: myName,
+                      email: myEmail,
+                      joinedAt: new Date().toISOString()
+                    });
+
+                    // Trigger confetti!
+                    import("canvas-confetti").then((m) => {
+                      m.default({
+                        particleCount: 150,
+                        spread: 80,
+                        origin: { y: 0.6 }
+                      });
+                    });
+
+                    alert(`🎉 مبارك! لقد انضممت بنجاح مع زميلك ${classmateName} في صفك الدراسي التفاعلي بأكاديمية StitchLab!`);
+                  } catch (err) {
+                    console.error("Error joining classroom:", err);
+                    alert("عذراً، لم نتمكن من إتمام عملية الانضمام بنجاح.");
+                  } finally {
+                    localStorage.removeItem("stitchlab_academy_invite_id");
+                    localStorage.removeItem("stitchlab_academy_inviter_name");
+                    setPendingAcademyInvite(null);
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white text-xs font-extrabold py-3 px-4 rounded-xl shadow-md cursor-pointer transition-all active:scale-95"
+              >
+                نعم، موافق 👍
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem("stitchlab_academy_invite_id");
+                  localStorage.removeItem("stitchlab_academy_inviter_name");
+                  setPendingAcademyInvite(null);
+                  setMainTab("learning"); // Go to main interface (Home)
+                  alert("تم تخطي الانضمام؛ نأخذك الآن للواجهة الرئيسية.");
+                }}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-black py-3 px-4 rounded-xl cursor-pointer transition-all active:scale-95"
+              >
+                ليس الآن ⏱️
               </button>
             </div>
 
