@@ -17,7 +17,8 @@ import {
   X,
   Sparkles,
   Copy,
-  Settings
+  Settings,
+  Cloud
 } from "lucide-react";
 import { 
   Persona, 
@@ -221,8 +222,13 @@ export default function App() {
   const [currentSyncCode, setCurrentSyncCode] = useState<string>("");
 
   // Google Drive backup states
-  const [driveToken, setDriveToken] = useState<string | null>(null);
+  const [driveToken, setDriveToken] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("stitchlab_drive_token") || null;
+  });
   const [driveFileId, setDriveFileId] = useState<string | null>(null);
+  const [showContinueScreen, setShowContinueScreen] = useState<boolean>(false);
+  const [googleSuccessMsg, setGoogleSuccessMsg] = useState<string>("");
   const [isBackupLoading, setIsBackupLoading] = useState<boolean>(false);
   const [isRestoreLoading, setIsRestoreLoading] = useState<boolean>(false);
   const [cloudDriveBackup, setCloudDriveBackup] = useState<{
@@ -642,21 +648,15 @@ export default function App() {
     const token = forceToken || driveToken;
     let finalToken = token;
     if (!finalToken) {
-      // Prompt sign in popup to get permission token
+      // Prompt sign in popup to get permission token using our custom client-configured OAuth
       try {
-        const { GoogleAuthProvider } = await import("firebase/auth");
-        const result = await signInWithPopup(auth, googleProvider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-          finalToken = credential.accessToken;
-          setDriveToken(credential.accessToken);
-        } else {
-          alert("⚠️ فشل الحصول على كود الصلاحية من Google Drive. يرجى تسجيل الدخول مرة أخرى.");
-          return;
-        }
+        const customToken = await initGoogleDriveOAuth();
+        finalToken = customToken;
+        setDriveToken(customToken);
+        localStorage.setItem("stitchlab_drive_token", customToken);
       } catch (err) {
         console.error("Popup Auth failed:", err);
-        alert("⚠️ يرجى تفويض صلاحية الوصول إلى Google App Data لإتمام النسخ الاحتياطي.");
+        alert("⚠️ يرجى تفويض صلاحية الوصول إلى Google Drive لإتمام النسخ الاحتياطي السحابي.");
         return;
       }
     }
@@ -721,16 +721,10 @@ export default function App() {
     let finalToken = token;
     if (!finalToken) {
       try {
-        const { GoogleAuthProvider } = await import("firebase/auth");
-        const result = await signInWithPopup(auth, googleProvider);
-        const credential = GoogleAuthProvider.credentialFromResult(result);
-        if (credential?.accessToken) {
-          finalToken = credential.accessToken;
-          setDriveToken(credential.accessToken);
-        } else {
-          alert("⚠️ فشل الحصول على كود الصلاحية من Google Drive.");
-          return;
-        }
+        const customToken = await initGoogleDriveOAuth();
+        finalToken = customToken;
+        setDriveToken(customToken);
+        localStorage.setItem("stitchlab_drive_token", customToken);
       } catch (err) {
         console.error("Auth popup failed:", err);
         alert("⚠️ يرجى تفويض صلاحية الوصول إلى حساب Google لإجراء الاستعادة.");
@@ -967,6 +961,148 @@ export default function App() {
       return next;
     });
     alert("🎉 مبارك! تمت إضافة 15 دقيقة إضافية بنجاح لمواصلة التعلم.");
+  };
+
+  // Custom Google Drive Client-ID & Scopes OAuth popup helper
+  const initGoogleDriveOAuth = () => {
+    return new Promise<string>((resolve, reject) => {
+      const clientId = "658966518868-neujma8ksfqp50jdqq53g42e38st1t80.apps.googleusercontent.com";
+      const redirectUri = `${window.location.origin}/auth/callback`;
+      const scope = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata";
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth` +
+        `?client_id=${encodeURIComponent(clientId)}` +
+        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+        `&response_type=token` +
+        `&scope=${encodeURIComponent(scope)}`;
+
+      const width = 600;
+      const height = 650;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
+
+      console.log("StitchLab custom OAuth flow: Opening popup with client_id:", clientId);
+      const popup = window.open(
+        authUrl,
+        "google_drive_oauth",
+        `width=${width},height=${height},top=${top},left=${left},scrollbars=yes`
+      );
+
+      if (!popup) {
+        alert("⚠️ تم حجب النافذة المنبثقة! يرجى السماح بالنوافذ المنبثقة لـ StitchLab لتفعيل Google Drive.");
+        reject(new Error("Popup blocked"));
+        return;
+      }
+
+      const messageListener = (event: MessageEvent) => {
+        // Validate origin matches current scheme and host
+        if (event.origin !== window.location.origin) return;
+
+        if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.token) {
+          window.removeEventListener('message', messageListener);
+          resolve(event.data.token);
+        }
+      };
+
+      window.addEventListener('message', messageListener);
+
+      const interval = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(interval);
+          window.removeEventListener('message', messageListener);
+          reject(new Error("Popup closed by student"));
+        }
+      }, 1000);
+    });
+  };
+
+  // Handle email login & registration
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setAuthError("يرجى إدخال البريد الإلكتروني وكلمة المرور.");
+      return;
+    }
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const { signInWithEmailAndPassword } = await import("firebase/auth");
+      await signInWithEmailAndPassword(auth, email, password);
+      // Immediately after logging in with email, show 'هيا لنكمل' screen
+      setShowContinueScreen(true);
+    } catch (err: any) {
+      console.error("Email login failed:", err);
+      let errMsg = "فشل تسجيل الدخول. يرجى التثبت من البريد الإلكتروني وكلمة المرور.";
+      if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+        errMsg = "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى التثبت والمحاولة مجددًا.";
+      } else if (err.code === "auth/invalid-email") {
+        errMsg = "صيغة البريد الإلكتروني غير صالحة.";
+      }
+      setAuthError(errMsg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password || !name) {
+      setAuthError("يرجى ملء جميع الحقول المطلوبة (الاسم، البريد، كلمة المرور).");
+      return;
+    }
+    if (password.length < 6) {
+      setAuthError("يجب ألا تقل كلمة المرور عن 6 أحرف.");
+      return;
+    }
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      const { createUserWithEmailAndPassword, updateProfile } = await import("firebase/auth");
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(userCredential.user, { displayName: name });
+      // Immediately after registering with email, show 'هيا لنكمل' screen
+      setShowContinueScreen(true);
+    } catch (err: any) {
+      console.error("Email registration failed:", err);
+      let errMsg = "فشل إنشاء الحساب. يرجى التثبت من صحة البريد الإلكتروني والمحاولة مرة أخرى.";
+      if (err.code === "auth/email-already-in-use") {
+        errMsg = "هذا البريد الإلكتروني مستخدم بالفعل وحسابك مسجل مسبقًا.";
+      } else if (err.code === "auth/invalid-email") {
+        errMsg = "صيغة البريد الإلكتروني غير صالحة.";
+      } else if (err.code === "auth/weak-password") {
+        errMsg = "كلمة المرور ضعيفة جدًا ونقترح اختيار كلمة مرور أقوى.";
+      }
+      setAuthError(errMsg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleActivateDrive = async () => {
+    setAuthError("");
+    setAuthLoading(true);
+    try {
+      // Direct OAuth with configured Client ID and Scope
+      const token = await initGoogleDriveOAuth();
+      setDriveToken(token);
+      localStorage.setItem("stitchlab_drive_token", token);
+      
+      // Attempt to immediately sync backup
+      await checkGoogleDriveForBackup(token, false);
+      
+      setGoogleSuccessMsg("تم تسجيل دخولك بنجاح");
+      try { playAudioFeedback(true); } catch (_) {}
+      
+      setTimeout(() => {
+        setIsLoggedIn(true);
+        setShowContinueScreen(false);
+        setGoogleSuccessMsg("");
+      }, 2500);
+    } catch (err: any) {
+      console.error("Google Drive connection failed:", err);
+      setAuthError("لم نتمكن من ربط Google Drive. يرجى المحاولة مرة أخرى للحصول على ميزة الحفظ السحابي التلقائي.");
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   // Auth: handle Google Sign-In via Firebase Popup
@@ -1584,7 +1720,76 @@ export default function App() {
     <div id="stitchlab-main" className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased selection:bg-purple-500 selection:text-white" dir="rtl">
       
       {/* 1. NOT LOGGED IN LAYOUT / OR LOADING SATELLITE */}
-      {!isLoggedIn ? (
+      {showContinueScreen ? (
+        <div id="stitchlab-continue-step" className="flex min-h-screen flex-col items-center justify-center p-4 md:p-8 bg-gradient-to-br from-pink-50 via-[#FFF9FB] to-purple-50 text-slate-800 relative overflow-hidden" dir="rtl">
+          {/* Ambient luminous flows */}
+          <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-pink-400/10 rounded-full blur-[120px] pointer-events-none"></div>
+          <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-300/10 rounded-full blur-[120px] pointer-events-none"></div>
+          
+          <div className="w-full max-w-md space-y-6 relative z-10 text-center">
+            <div className="space-y-2">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-white border border-pink-100 shadow-xl overflow-hidden mb-2 p-1.5 animate-bounce">
+                <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+              </div>
+              <h1 id="continue-heading" className="text-4xl font-extrabold text-purple-950 tracking-tight">
+                هيا لنكمل 🚀
+              </h1>
+              <p className="text-xs text-purple-900/80 font-bold">
+                لتفعيل ميزة المزامنة السحابية والحفظ التلقائي لتقدمك
+              </p>
+            </div>
+
+            <div className="bg-white/95 backdrop-blur-md rounded-[32px] border border-pink-100/50 p-6 md:p-8 shadow-[0_25px_60px_rgba(236,72,153,0.06)] space-y-6 text-center">
+              <p className="text-xs leading-relaxed text-slate-600 font-bold">
+                لقد قمت بتسجيل الدخول بنجاح! لتبقى مهاراتك ونقاطك التفاعلية ومحفظة الكلمات محفوظة وآمنة دائمًا، يرجى تفعيل الاتصال بحساب Google Drive الخاص بك.
+              </p>
+
+              {authError && (
+                <div className="p-4 mb-4 rounded-2xl text-xs bg-rose-50 border border-rose-150 text-rose-800 flex items-start gap-2 text-right" dir="rtl">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed font-medium flex-1">{authError}</div>
+                </div>
+              )}
+
+              {googleSuccessMsg ? (
+                <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-800 text-center text-xs font-black animate-pulse flex flex-col items-center justify-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-black">✓</div>
+                  <span>{googleSuccessMsg} 🌸</span>
+                </div>
+              ) : (
+                <button
+                  onClick={handleActivateDrive}
+                  disabled={authLoading}
+                  className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-lg active:scale-95 hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
+                >
+                  {authLoading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                      <span>جاري تشغيل الاتصال السحابي...</span>
+                    </span>
+                  ) : (
+                    <>
+                      <Cloud className="w-5 h-5 shrink-0" />
+                      <span>تنشيط Google Drive ☁️</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsLoggedIn(true);
+                  setShowContinueScreen(false);
+                }}
+                className="w-full py-2.5 text-[11px] text-slate-400 hover:text-slate-600 font-bold transition-all underline cursor-pointer"
+              >
+                تخطي المزامنة والدخول الآن 🎓
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : !isLoggedIn ? (
         <div className="flex min-h-screen flex-col items-center justify-center p-4 md:p-8 bg-gradient-to-br from-pink-50 via-[#FFF9FB] to-purple-50 text-slate-800 relative overflow-hidden">
           
           {/* Ambient luminous flows for modern feel */}
@@ -1607,58 +1812,145 @@ export default function App() {
               <div className="w-20 h-1 bg-gradient-to-r from-purple-600 to-pink-500 mx-auto rounded-full mt-4"></div>
             </div>
 
-            <div className="bg-white/95 backdrop-blur-md rounded-[32px] border border-pink-100/50 p-6 md:p-8 shadow-[0_25px_60px_rgba(236,72,153,0.06)] relative overflow-hidden space-y-6">
+            <div className="bg-white/95 backdrop-blur-md rounded-[32px] border border-pink-100/50 p-6 md:p-8 shadow-[0_25px_60px_rgba(236,72,153,0.06)] relative overflow-hidden space-y-5">
               <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none"></div>
               <div className="absolute bottom-0 left-0 w-32 h-32 bg-pink-500/5 rounded-full blur-3xl pointer-events-none"></div>
 
-              <div className="text-center space-y-2">
-                <span className="text-xs bg-purple-100 text-purple-950 font-black px-3.5 py-1.5 rounded-full border border-purple-200">
-                  سجّل دخولك مجانًا 🎓
+              <div className="text-center space-y-1">
+                <span className="text-xs bg-purple-100 text-purple-950 font-black px-3.5 py-1.5 rounded-full border border-purple-200 inline-block">
+                  بوابة الطالب الذكية 🎓
                 </span>
-                <p className="text-xs text-slate-500 font-bold leading-relaxed pt-2">
-                  للاحتفاظ بنقاطك، تقدمك، ومستواك التعليمي مشفرًا ومحفوظاً على السحابة طوال الوقت!
+                <p className="text-[11px] text-slate-400 font-bold pt-1.5">
+                  أهلاً بك في فضاء التدريب التفاعلي على اللغة الإنجليزية.
                 </p>
               </div>
 
+              {/* Selector Tabs (Login / Sign Up) */}
+              <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("login");
+                    setAuthError("");
+                  }}
+                  className={`flex-1 py-2.5 text-center text-xs font-black transition-all rounded-xl cursor-pointer ${
+                    authMode === "login"
+                      ? "bg-white text-purple-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  🗝️ تسجيل الدخول
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("signup");
+                    setAuthError("");
+                  }}
+                  className={`flex-1 py-2.5 text-center text-xs font-black transition-all rounded-xl cursor-pointer ${
+                    authMode === "signup"
+                      ? "bg-white text-purple-950 shadow-sm"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  ➕ حساب جديد
+                </button>
+              </div>
+
               {authError && (
-                <div className="p-4 mb-4 rounded-2xl text-xs bg-rose-50 border border-rose-150 text-rose-800 flex items-start gap-2" dir="rtl">
+                <div className="p-4 rounded-2xl text-xs bg-rose-50 border border-rose-150 text-rose-800 flex items-start gap-2 text-right" dir="rtl">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div className="whitespace-pre-line leading-relaxed text-right font-medium flex-1">{authError}</div>
+                  <div className="leading-relaxed font-bold flex-1">{authError}</div>
                 </div>
               )}
 
+              {/* Form implementation */}
+              <form onSubmit={authMode === "login" ? handleEmailSignIn : handleEmailSignUp} className="space-y-3">
+                {authMode === "signup" && (
+                  <div className="space-y-1 text-right">
+                    <label className="text-[10px] font-black text-slate-500 mr-1 block">الاسم الشخصي واللقب ✏️</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="عبدالله محمد"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
+                    />
+                  </div>
+                )}
+
+                <div className="space-y-1 text-right">
+                  <label className="text-[10px] font-black text-slate-500 mr-1 block">البريد الإلكتروني ✉️</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="student@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
+                  />
+                </div>
+
+                <div className="space-y-1 text-right">
+                  <label className="text-[10px] font-black text-slate-500 mr-1 block">كلمة المرور 🔒</label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="******"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full mt-3 py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-md hover:shadow-purple-500/15 transition-all text-center flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {authLoading ? (
+                    <span className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                  ) : authMode === "login" ? (
+                    "دخول للمختبر 🗝️"
+                  ) : (
+                    "إنشاء الحساب والمتابعة 🎯"
+                  )}
+                </button>
+              </form>
+
+              {/* Separator line */}
+              <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 py-1">
+                <hr className="flex-1 border-slate-200" />
+                <span>أو الدخول بـ Google</span>
+                <hr className="flex-1 border-slate-200" />
+              </div>
+
+              {/* Standard Google Sign-In */}
               <button
                 id="submit-google-login-btn"
                 onClick={handleGoogleSignIn}
                 disabled={authLoading}
-                className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-lg active:scale-95 hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
+                className="w-full py-4 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-extrabold rounded-2xl text-xs shadow-sm transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50 disabled:pointer-events-none"
               >
-                {authLoading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                    <span>جاري الاتصال بـ Google...</span>
-                  </span>
-                ) : (
-                  <>
-                    <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
-                    </svg>
-                    <span>الدخول السريع بحساب Google</span>
-                  </>
-                )}
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                </svg>
+                <span>متابعة باستخدام حساب Google</span>
               </button>
 
-              <div className="pt-2 flex justify-center items-center">
+              <div className="pt-1 flex justify-center items-center">
                 <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
                   تشفير آمن بنسبة 100% 🔒
                 </span>
               </div>
             </div>
 
-            <p className="text-[11px] text-center text-slate-550 font-bold font-sans">
+            <p className="text-[11px] text-center text-slate-500 font-bold font-sans">
               يتم تشفير وحفظ تقدّمك بكافة الأجهزة تلقائيًا عبر حسابك على Google.
             </p>
           </div>

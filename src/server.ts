@@ -279,6 +279,92 @@ No markdown code fences. Strictly output valid JSON.
   }
 });
 
+// Google Drive OAuth 2.0 Callback handler page for Client-Side Access Token parsing
+app.get('/auth/callback', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ar" dir="rtl">
+    <head>
+      <meta charset="UTF-8">
+      <title>تأكيد الاتصال بـ Google Drive</title>
+      <style>
+        body {
+          font-family: system-ui, -apple-system, sans-serif;
+          background: #f8fafc;
+          color: #1e293b;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          margin: 0;
+        }
+        .card {
+          background: white;
+          padding: 2.5rem;
+          border-radius: 1.5rem;
+          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+          text-align: center;
+          max-width: 420px;
+          border: 1px solid #f1f5f9;
+        }
+        .spinner {
+          border: 4px solid #f1f5f9;
+          border-top: 4px solid #d946ef;
+          border-radius: 50%;
+          width: 48px;
+          height: 48px;
+          animation: spin 1s linear infinite;
+          margin: 1.5rem auto;
+        }
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        h2 {
+          font-size: 1.5rem;
+          margin-bottom: 0.5rem;
+          color: #0f172a;
+        }
+        p {
+          font-size: 0.875rem;
+          color: #64748b;
+          line-height: 1.5;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div id="spinner" class="spinner"></div>
+        <h2 id="title">جاري ربط حساب Google Drive...</h2>
+        <p id="desc">يرجى الانتظار، سيتم إغلاق هذه النافذة تلقائياً بعد المصادقة بنجاح.</p>
+      </div>
+      <script>
+        // Parse access_token from the URL hash fragment or query params
+        const params = new URLSearchParams(window.location.hash.substring(1) || window.location.search);
+        const accessToken = params.get('access_token');
+        
+        if (accessToken) {
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: accessToken }, '*');
+            setTimeout(() => {
+              window.close();
+            }, 1000);
+          } else {
+            document.getElementById('title').textContent = "تنبيه هام";
+            document.getElementById('desc').textContent = "لم نتمكن من العثور على النافذة الرئيسية لإرسال رمز التحقق. يرجى إغلاق النافذة والمحاولة من المتصفح مباشرة.";
+            document.getElementById('spinner').style.display = 'none';
+          }
+        } else {
+          document.getElementById('title').textContent = "صلاحيات غير مكتملة";
+          document.getElementById('desc').textContent = "لم نتمكن من الحصول على صلاحية الوصول لـ Google Drive. يرجى إغلاق النافذة والمحاولة مرة أخرى.";
+          document.getElementById('spinner').style.display = 'none';
+        }
+      </script>
+    </body>
+    </html>
+  `);
+});
+
 // Vite/Static assets server configuration
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
