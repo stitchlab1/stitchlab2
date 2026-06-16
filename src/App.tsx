@@ -1393,7 +1393,7 @@ export default function App() {
   // Custom Google Drive Client-ID & Scopes OAuth popup helper
   const initGoogleDriveOAuth = () => {
     return new Promise<string>((resolve, reject) => {
-      const clientId = "658966518868-neujma8ksfqp50jdqq53g42e38st1t80.apps.googleusercontent.com";
+      const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "658966518868-rdk28hfhp5bdvf73nl2s6r9rpriupchh.apps.googleusercontent.com";
       const redirectUri = `${window.location.origin}/auth/callback`;
       const scope = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata";
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth` +
@@ -3662,6 +3662,45 @@ export default function App() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
+                    </div>
+                  </button>
+
+                  {/* Option 5: Reset completed groups to zero */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const confirmReset = window.confirm("هل أنت متأكد من تصفير مجموع المجموعات بالكامل؟ سيتم إعادة تعيين تقدمك في المجموعات إلى الصفر. ⚠️");
+                      if (confirmReset) {
+                        setCompletedGroups([]);
+                        setUnlockedAdvertiserGroups([]);
+                        localStorage.setItem("stitchlab_completed_groups", JSON.stringify([]));
+                        localStorage.setItem("stitchlab_unlocked_ad_groups", JSON.stringify([]));
+                        if (isLoggedIn && auth.currentUser) {
+                          try {
+                            const uid = auth.currentUser.uid;
+                            const docRef = doc(db, "students", uid);
+                            await setDoc(docRef, {
+                              completedGroups: [],
+                              updatedAt: new Date().toISOString()
+                            }, { merge: true });
+                            alert("✨ تم تصفير مجموع المجموعات بنجاح في السحابة وجهازك!");
+                          } catch (err) {
+                            console.error("Error resetting completed groups in cloud:", err);
+                            alert("✨ تم تصفير المجموعات محلياً بنجاح. سيتم المزامنة السحابية تلقائياً لاحقاً.");
+                          }
+                        } else {
+                          alert("✨ تم تصفير مجموع المجموعات محلياً بنجاح!");
+                        }
+                      }
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-rose-100 hover:border-rose-250 bg-rose-50/15 hover:bg-rose-50/30 transition-all text-right cursor-pointer group active:scale-[0.98]"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-rose-100 flex items-center justify-center text-rose-700 shrink-0 group-hover:scale-110 transition-transform">
+                      <Trash2 className="w-5.5 h-5.5 text-rose-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-black text-rose-950">تصفير ومسح مجموع المجموعات 🔄🧹</h4>
+                      <p className="text-[10px] text-zinc-405 font-bold mt-0.5">إعادة ضبط جميع إنجازات ومؤشرات المجموعات إلى الصفر والبدء من جديد</p>
                     </div>
                   </button>
 
