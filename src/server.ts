@@ -385,6 +385,11 @@ app.get('/auth/callback', (req, res) => {
         <div id="spinner" class="spinner"></div>
         <h2 id="title">جاري ربط حساب Google Drive...</h2>
         <p id="desc">يرجى الانتظار، سيتم إغلاق هذه النافذة تلقائياً بعد المصادقة بنجاح.</p>
+        <div style="margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px dashed #e2e8f0; font-size: 0.75rem; color: #64748b;">
+          باستخدام هذه الخدمة، فإنك توافق على 
+          <br/>
+          <a href="https://stitchlab2.vercel.app/privacy-policy" target="_blank" style="color: #6366f1; text-decoration: underline; font-weight: bold; display: inline-block; margin-top: 0.25rem;">سياسة الخصوصية الخاصة بـ StitchLab (Privacy Policy)</a>
+        </div>
       </div>
       <script>
         // Parse access_token from the URL hash fragment or query params

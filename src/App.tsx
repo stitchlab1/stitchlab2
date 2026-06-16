@@ -1582,15 +1582,8 @@ export default function App() {
     setAuthLoading(true);
     try {
       const { GoogleAuthProvider } = await import("firebase/auth");
-      const result = await signInWithPopup(auth, googleProvider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
-      if (credential?.accessToken) {
-        setDriveToken(credential.accessToken);
-        console.log("StitchLab Drive: Dynamic token acquired upon authentication:", credential.accessToken);
-        await checkGoogleDriveForBackup(credential.accessToken, false);
-      } else {
-        console.warn("StitchLab Drive: Authentication successful but No access credentials returned.");
-      }
+      await signInWithPopup(auth, googleProvider);
+      console.log("StitchLab Auth: Google Sign-In successful with basic credentials.");
     } catch (err: any) {
       console.error("Google Sign-In failed:", err);
       const errStr = err.message || "";
@@ -1606,6 +1599,8 @@ export default function App() {
           `3️⃣ من خيار Authorized domains (النطاقات المصرح بها) اضغط على زر "Add domain".\n` +
           `4️⃣ أضف النطاقات التالية:\n` +
           `   • ${currentHost}\n` +
+          `   • stitchlab2.vercel.app\n` +
+          `   • vercel.app\n` +
           `   • ais-pre-s3w4brjysehjqipqfcuhgi-220375696903.europe-west2.run.app\n` +
           `   • localhost\n\n` +
           `🔄 بعد الإضافة، قم بإعادة تنشيط الصفحة وحاول تسجيل الدخول مرة أخرى بحساب Google الخاص بك لتفادي العائق!`
