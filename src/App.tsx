@@ -476,6 +476,7 @@ export default function App() {
   const [googleSuccessMsg, setGoogleSuccessMsg] = useState<string>("");
   const [isBackupLoading, setIsBackupLoading] = useState<boolean>(false);
   const [isRestoreLoading, setIsRestoreLoading] = useState<boolean>(false);
+  const [showOAuthHelper, setShowOAuthHelper] = useState<boolean>(false);
   const [cloudDriveBackup, setCloudDriveBackup] = useState<{
     id: string;
     modifiedTime?: string;
@@ -1399,7 +1400,8 @@ export default function App() {
         `?client_id=${encodeURIComponent(clientId)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
         `&response_type=token` +
-        `&scope=${encodeURIComponent(scope)}`;
+        `&scope=${encodeURIComponent(scope)}` +
+        `&include_granted_scopes=true`;
 
       const width = 600;
       const height = 650;
@@ -1426,6 +1428,9 @@ export default function App() {
         if (event.data?.type === 'OAUTH_AUTH_SUCCESS' && event.data?.token) {
           window.removeEventListener('message', messageListener);
           resolve(event.data.token);
+        } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+          window.removeEventListener('message', messageListener);
+          reject(new Error(event.data?.error || "Auth rejected by Google"));
         }
       };
 
@@ -2347,23 +2352,87 @@ export default function App() {
                   <span>{googleSuccessMsg} 🌸</span>
                 </div>
               ) : (
-                <button
-                  onClick={handleActivateDrive}
-                  disabled={authLoading}
-                  className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-lg active:scale-95 hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
-                >
-                  {authLoading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                      <span>جاري تشغيل الاتصال السحابي...</span>
-                    </span>
-                  ) : (
-                    <>
-                      <Cloud className="w-5 h-5 shrink-0" />
-                      <span>تنشيط Google Drive ☁️</span>
-                    </>
+                <div className="space-y-4">
+                  <button
+                    onClick={handleActivateDrive}
+                    disabled={authLoading}
+                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-lg active:scale-95 hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-50"
+                  >
+                    {authLoading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                        <span>جاري تشغيل الاتصال السحابي...</span>
+                      </span>
+                    ) : (
+                      <>
+                        <Cloud className="w-5 h-5 shrink-0" />
+                        <span>تنشيط Google Drive ☁️</span>
+                      </>
+                    )}
+                  </button>
+
+                  <div className="border-t border-dashed border-slate-100 pt-3 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setShowOAuthHelper(!showOAuthHelper)}
+                      className="text-[11px] text-purple-600 hover:text-purple-700 font-extrabold focus:outline-none flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                    >
+                      <span>💡 هل تواجه مشكلة (طلب غير صالح أو حظر الوصول)؟ اضغط للحل السريع</span>
+                    </button>
+                  </div>
+
+                  {showOAuthHelper && (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-150 text-right space-y-3 text-xs animate-fadeIn leading-relaxed max-h-[300px] overflow-y-auto">
+                      <div className="flex items-center gap-2 text-purple-950 font-black border-b border-dashed border-slate-200 pb-1.5">
+                        <span>⚙️ حل مشكلة حظر الوصول والمزامنة السحابية (OAuth 400)</span>
+                      </div>
+                      <p className="text-[10.5px] text-slate-500 font-bold">
+                        هذا الخطأ يحدث عندما لا تتطابق روابط التطبيق مع الروابط المصرح بها في كونسول Google Cloud. اتبع الخطوات التالية للتصريح بها فوراً:
+                      </p>
+                      <ol className="list-decimal list-inside text-[10.5px] text-slate-600 space-y-2.5 font-semibold pr-1">
+                        <li>
+                          اذهب إلى <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-purple-600 underline font-bold">Google Cloud Console</a> لمشروعك.
+                        </li>
+                        <li>
+                          انتقل إلى قسم <span className="font-bold">APIs & Services</span> ⬅️ <span className="font-bold">Credentials</span>.
+                        </li>
+                        <li>
+                          قم بتحرير الـ <span className="font-bold">OAuth 2.0 Web Client ID</span> الخاص بك.
+                        </li>
+                        <li>
+                          تحت <span className="font-bold">Authorized redirect URIs (العناوين المصرح بها لإعادة التوجيه)</span> اضغط على إضافة عنوان، ثم الصق العناوين التالية بالضبط:
+                          <div className="bg-slate-900 text-slate-100 p-2 rounded-lg font-mono text-[9px] mt-1 space-y-1 select-all hover:bg-black transition-colors" dir="ltr text-left">
+                            https://stitchlab2.vercel.app/auth/callback
+                            <br />
+                            https://vercel.app/auth/callback
+                            <br />
+                            http://localhost:3000/auth/callback
+                            <br />
+                            {window.location.origin}/auth/callback
+                          </div>
+                        </li>
+                        <li>
+                          تحت <span className="font-bold">Authorized JavaScript origins (مصادر JavaScript المصرح بها)</span> أضف العناوين التالية للسلامة أيضاً:
+                          <div className="bg-slate-900 text-slate-100 p-2 rounded-lg font-mono text-[9px] mt-1 space-y-1 select-all hover:bg-black transition-colors" dir="ltr text-left">
+                            https://stitchlab2.vercel.app
+                            <br />
+                            https://vercel.app
+                            <br />
+                            http://localhost:3000
+                            <br />
+                            {window.location.origin}
+                          </div>
+                        </li>
+                        <li>
+                          في تبويب <span className="font-bold">OAuth Consent Screen (شاشة موافقة OAuth)</span> تأكد من إدخال رابط سياسة الخصوصية <code className="text-pink-600 font-mono bg-pink-50 px-1 rounded" dir="ltr">https://stitchlab2.vercel.app/privacy-policy</code> في حقل Privacy Policy URL لتسريع عملية المراجعة وموافقة Google الفورية!
+                        </li>
+                        <li>
+                          احفظ التعديلات وجرب المزامنة الآن لتغمر تقدمك بالسحاب ☁️!
+                        </li>
+                      </ol>
+                    </div>
                   )}
-                </button>
+                </div>
               )}
 
 
@@ -3194,7 +3263,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={async () => {
-                        await handleGoogleSignIn();
+                        await handleActivateDrive();
                       }}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl active:scale-95 transition-all cursor-pointer"
                     >
@@ -3258,9 +3327,71 @@ export default function App() {
                     }}
                     className="w-full bg-pink-600 hover:bg-pink-700 disabled:bg-pink-350 text-white font-black text-xs py-3 px-4 rounded-xl active:scale-[0.97] transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                   >
-                    {isRestoreLoading ? "🔄 جاري الاستعادة..." : "📥 استعادة التقدم"}
+                     {isRestoreLoading ? "🔄 جاري الاستعادة..." : "📥 استعادة التقدم"}
                   </button>
                 </div>
+
+                <div className="border-t border-dashed border-slate-100 pt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowOAuthHelper(!showOAuthHelper)}
+                    className="text-[11px] text-purple-600 hover:text-purple-700 font-extrabold focus:outline-none flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                  >
+                    <span>💡 هل تواجه مشكلة (طلب غير صالح أو حظر الوصول)؟ اضغط للحل السريع</span>
+                  </button>
+                </div>
+
+                {showOAuthHelper && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-150 text-right space-y-3 text-xs animate-fadeIn leading-relaxed max-h-[250px] overflow-y-auto">
+                    <div className="flex items-center gap-2 text-purple-950 font-black border-b border-dashed border-slate-200 pb-1.5">
+                      <span>⚙️ حل مشكلة حظر الوصول والمزامنة السحابية (OAuth 400)</span>
+                    </div>
+                    <p className="text-[10.5px] text-slate-500 font-bold">
+                      هذا الخطأ يحدث عندما لا تتطابق روابط التطبيق مع الروابط المصرح بها في كونسول Google Cloud. اتبع الخطوات التالية للتصريح بها فوراً:
+                    </p>
+                    <ol className="list-decimal list-inside text-[10.5px] text-slate-600 space-y-2.5 font-semibold pr-1">
+                      <li>
+                        اذهب إلى <a href="https://console.cloud.google.com/" target="_blank" rel="noopener noreferrer" className="text-purple-600 underline font-bold">Google Cloud Console</a> لمشروعك.
+                      </li>
+                      <li>
+                        انتقل إلى قسم <span className="font-bold">APIs & Services</span> ⬅️ <span className="font-bold">Credentials</span>.
+                      </li>
+                      <li>
+                        قم بتحرير الـ <span className="font-bold">OAuth 2.0 Web Client ID</span> الخاص بك.
+                      </li>
+                      <li>
+                        تحت <span className="font-bold">Authorized redirect URIs (العناوين المصرح بها لإعادة التوجيه)</span> اضغط على إضافة عنوان، ثم الصق العناوين التالية بالضبط:
+                        <div className="bg-slate-900 text-slate-100 p-2 rounded-lg font-mono text-[9px] mt-1 space-y-1 select-all hover:bg-black transition-colors" dir="ltr text-left">
+                          https://stitchlab2.vercel.app/auth/callback
+                          <br />
+                          https://vercel.app/auth/callback
+                          <br />
+                          http://localhost:3000/auth/callback
+                          <br />
+                          {window.location.origin}/auth/callback
+                        </div>
+                      </li>
+                      <li>
+                        تحت <span className="font-bold">Authorized JavaScript origins (مصادر JavaScript المصرح بها)</span> أضف العناوين التالية للسلامة أيضاً:
+                        <div className="bg-slate-900 text-slate-100 p-2 rounded-lg font-mono text-[9px] mt-1 space-y-1 select-all hover:bg-black transition-colors" dir="ltr text-left">
+                          https://stitchlab2.vercel.app
+                          <br />
+                          https://vercel.app
+                          <br />
+                          http://localhost:3000
+                          <br />
+                          {window.location.origin}
+                        </div>
+                      </li>
+                      <li>
+                        في تبويب <span className="font-bold">OAuth Consent Screen (شاشة موافقة OAuth)</span> تأكد من إدخال رابط سياسة الخصوصية <code className="text-pink-600 font-mono bg-pink-50 px-1 rounded" dir="ltr">https://stitchlab2.vercel.app/privacy-policy</code> في حقل Privacy Policy URL لتسريع عملية المراجعة وموافقة Google الفورية!
+                      </li>
+                      <li>
+                        احفظ التعديلات وجرب المزامنة الآن لتغمر تقدمك بالسحاب ☁️!
+                      </li>
+                    </ol>
+                  </div>
+                )}
               </div>
             )}
 

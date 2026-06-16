@@ -408,6 +408,10 @@ app.get('/auth/callback', (req, res) => {
             document.getElementById('spinner').style.display = 'none';
           }
         } else {
+          const authError = params.get('error') || 'unknown';
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: authError }, '*');
+          }
           document.getElementById('title').textContent = "صلاحيات غير مكتملة";
           document.getElementById('desc').textContent = "لم نتمكن من الحصول على صلاحية الوصول لـ Google Drive. يرجى إغلاق النافذة والمحاولة مرة أخرى.";
           document.getElementById('spinner').style.display = 'none';
