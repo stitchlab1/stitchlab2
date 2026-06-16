@@ -397,20 +397,38 @@ app.get('/auth/callback', (req, res) => {
         const accessToken = params.get('access_token');
         
         if (accessToken) {
+          // Store token in localStorage immediately so the parent app can successfully poll it (crucial for null window.opener fallbacks)
+          try {
+            localStorage.setItem("stitchlab_drive_token", accessToken);
+          } catch (e) {
+            console.error("Failed to write token directly to localStorage:", e);
+          }
+
           if (window.opener) {
-            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: accessToken }, '*');
+            try {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', token: accessToken }, '*');
+            } catch (e) {
+              console.error("postMessage failed:", e);
+            }
             setTimeout(() => {
               window.close();
             }, 1000);
           } else {
-            document.getElementById('title').textContent = "تنبيه هام";
-            document.getElementById('desc').textContent = "لم نتمكن من العثور على النافذة الرئيسية لإرسال رمز التحقق. يرجى إغلاق النافذة والمحاولة من المتصفح مباشرة.";
+            // No window.opener available (common in iOS/Safari and manual email logins). 
+            // Since localStorage already has the token, we can safely instruct them of the successful link!
+            document.getElementById('title').textContent = "تم الاتصال سحابياً بنجاح! 🎉";
+            document.getElementById('desc').textContent = "لقد تم ربط حسابك بـ Google Drive ومزامنة مهاراتك بنجاح على هذا المتصفح. سيتم إغلاق هذه النافذة تلقائياً الآن.";
             document.getElementById('spinner').style.display = 'none';
+            setTimeout(() => {
+              window.close();
+            }, 2500);
           }
         } else {
           const authError = params.get('error') || 'unknown';
           if (window.opener) {
-            window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: authError }, '*');
+            try {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: authError }, '*');
+            } catch (e) {}
           }
           document.getElementById('title').textContent = "صلاحيات غير مكتملة";
           document.getElementById('desc').textContent = "لم نتمكن من الحصول على صلاحية الوصول لـ Google Drive. يرجى إغلاق النافذة والمحاولة مرة أخرى.";

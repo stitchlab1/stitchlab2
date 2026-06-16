@@ -343,7 +343,7 @@ export default function App() {
     }
   };
 
-  const safeCopyToClipboard = (text: string, successMessage: string = "📋 تم النسخ بنجاح!") => {
+  const safeCopyToClipboard = (text: string, successMessage: string = "📋 تم النسخ بنجاح!", silent: boolean = false) => {
     try {
       const textarea = document.createElement("textarea");
       textarea.value = text;
@@ -357,12 +357,16 @@ export default function App() {
       const successful = document.execCommand("copy");
       document.body.removeChild(textarea);
       if (successful) {
-        alert(successMessage);
+        if (!silent) {
+          alert(successMessage);
+        }
       } else {
         throw new Error("Unable to execCommand('copy')");
       }
     } catch (err) {
-      window.prompt("🔒 تعذر النسخ التلقائي بسبب قيود المتصفح. يرجى نسخ النص يدوياً من الحقل المظلل بالأسفل:", text);
+      if (!silent) {
+        window.prompt("🔒 تعذر النسخ التلقائي بسبب قيود المتصفح. يرجى نسخ النص يدوياً من الحقل المظلل بالأسفل:", text);
+      }
     }
   };
 
@@ -465,6 +469,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [syncInputCode, setSyncInputCode] = useState<string>("");
   const [currentSyncCode, setCurrentSyncCode] = useState<string>("");
+  const [copiedUid, setCopiedUid] = useState<boolean>(false);
 
   // Google Drive backup states
   const [driveToken, setDriveToken] = useState<string | null>(() => {
@@ -1393,6 +1398,9 @@ export default function App() {
   // Custom Google Drive Client-ID & Scopes OAuth popup helper
   const initGoogleDriveOAuth = () => {
     return new Promise<string>((resolve, reject) => {
+      // Clear any previous token to prevent false triggers
+      localStorage.removeItem("stitchlab_drive_token");
+
       const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "658966518868-rdk28hfhp5bdvf73nl2s6r9rpriupchh.apps.googleusercontent.com";
       const redirectUri = `${window.location.origin}/auth/callback`;
       const scope = "https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.appdata";
@@ -1437,10 +1445,31 @@ export default function App() {
       window.addEventListener('message', messageListener);
 
       const interval = setInterval(() => {
+        // Active polling of localStorage (perfect fallback for when window.opener is null because of manual account typing)
+        const tokenFromStorage = localStorage.getItem("stitchlab_drive_token");
+        if (tokenFromStorage) {
+          clearInterval(interval);
+          window.removeEventListener('message', messageListener);
+          try {
+            if (popup && !popup.closed) {
+              popup.close();
+            }
+          } catch (_) {}
+          resolve(tokenFromStorage);
+          return;
+        }
+
         if (popup.closed) {
           clearInterval(interval);
           window.removeEventListener('message', messageListener);
-          reject(new Error("Popup closed by student"));
+          
+          // Last check just in case
+          const finalToken = localStorage.getItem("stitchlab_drive_token");
+          if (finalToken) {
+            resolve(finalToken);
+          } else {
+            reject(new Error("Popup closed by student"));
+          }
         }
       }, 1000);
     });
@@ -1485,8 +1514,8 @@ export default function App() {
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password || !name) {
-      setAuthError("يرجى ملء جميع الحقول المطلوبة (الاسم، البريد، كلمة المرور).");
+    if (!email || !password) {
+      setAuthError("يرجى ملء جميع الحقول المطلوبة (البريد، كلمة المرور).");
       return;
     }
     if (password.length < 6) {
@@ -1498,7 +1527,9 @@ export default function App() {
     try {
       const { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } = await import("firebase/auth");
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      await updateProfile(userCredential.user, { displayName: name });
+      
+      const fallbackName = email.split('@')[0] || "طالب StitchLab";
+      await updateProfile(userCredential.user, { displayName: fallbackName });
       
       // Send verification link immediately to new student inbox
       try {
@@ -2651,19 +2682,6 @@ export default function App() {
               {/* Form implementation */}
               {authMode !== "forgot-password" ? (
                 <form onSubmit={authMode === "login" ? handleEmailSignIn : handleEmailSignUp} className="space-y-3">
-                  {authMode === "signup" && (
-                    <div className="space-y-1 text-right">
-                      <label className="text-[10px] font-black text-slate-500 mr-1 block">الاسم ✏️</label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="عبدالله محمد"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
-                      />
-                    </div>
-                  )}
 
                   <div className="space-y-1 text-right">
                     <label className="text-[10px] font-black text-slate-500 mr-1 block">البريد الإلكتروني ✉️</label>
@@ -3586,13 +3604,17 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          safeCopyToClipboard(auth.currentUser?.uid || "", "📋 تم نسخ الرقم المميز بنجاح!");
+                          safeCopyToClipboard(auth.currentUser?.uid || "", "", true);
+                          setCopiedUid(true);
+                          setTimeout(() => setCopiedUid(false), 2000);
                         }}
-                        className="py-1.5 px-3 bg-purple-650 hover:bg-purple-700 text-white rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center cursor-pointer gap-1 text-xs font-black"
+                        className={`py-1.5 px-3 rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center cursor-pointer gap-1 text-xs font-black ${
+                          copiedUid ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-purple-650 hover:bg-purple-700 text-white"
+                        }`}
                         title="نسخ الرقم المميز"
                       >
-                        <Copy className="w-3 h-3" />
-                        <span>نسخ</span>
+                        {copiedUid ? <Sparkles className="w-3 h-3 text-emerald-100 animate-spin" /> : <Copy className="w-3 h-3" />}
+                        <span>{copiedUid ? "تم النسخ! 📋" : "نسخ"}</span>
                       </button>
                     </div>
                   )}
@@ -3701,6 +3723,43 @@ export default function App() {
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-black text-rose-950">تصفير ومسح مجموع المجموعات 🔄🧹</h4>
                       <p className="text-[10px] text-zinc-405 font-bold mt-0.5">إعادة ضبط جميع إنجازات ومؤشرات المجموعات إلى الصفر والبدء من جديد</p>
+                    </div>
+                  </button>
+
+                  {/* Option 6: Reset completed words to zero */}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const confirmReset = window.confirm("هل أنت متأكد من تصفير الكلمات المنجزة بالكامل؟ سيتم إعادة تعيين تقدم كلمتك المنجزة إلى الصفر. ⚠️");
+                      if (confirmReset) {
+                        setCompletedWordsCount(0);
+                        localStorage.setItem("stitchlab_completed_words_count", "0");
+                        if (isLoggedIn && auth.currentUser) {
+                          try {
+                            const uid = auth.currentUser.uid;
+                            const docRef = doc(db, "students", uid);
+                            await setDoc(docRef, {
+                              completedWordsCount: 0,
+                              updatedAt: new Date().toISOString()
+                            }, { merge: true });
+                            alert("✨ تم تصفير عدد الكلمات المنجزة بنجاح في السحابة وجهازك!");
+                          } catch (err) {
+                            console.error("Error resetting completed words in cloud:", err);
+                            alert("✨ تم تصفير الكلمات المنجزة محلياً بنجاح. سيتم المزامنة السحابية تلقائياً لاحقاً.");
+                          }
+                        } else {
+                          alert("✨ تم تصفير الكلمات المنجزة محلياً بنجاح!");
+                        }
+                      }
+                    }}
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-250 bg-amber-50/15 hover:bg-amber-50/30 transition-all text-right cursor-pointer group active:scale-[0.98]"
+                  >
+                    <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-110 transition-transform">
+                      <BookOpen className="w-5.5 h-5.5 text-amber-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-black text-amber-950">تصفير الكلمات المنجزة 🔄📖</h4>
+                      <p className="text-[10px] text-zinc-405 font-bold mt-0.5">إعادة ضبط جميع الكلمات المنجزة والبدء في بناء حصيلتك اللغوية من جديد</p>
                     </div>
                   </button>
 
