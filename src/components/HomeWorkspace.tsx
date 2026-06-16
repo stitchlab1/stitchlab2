@@ -4,7 +4,7 @@ import { playAudioFeedback } from "./types";
 import staticSheetWords from "../data/staticSheetWords.json";
 import { auth, db } from "../firebaseClient";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
-import html2canvas from "html2canvas";
+import domtoimage from "dom-to-image";
 import confetti from "canvas-confetti";
 
 const getTodayDateArabic = () => {
@@ -548,15 +548,15 @@ export default function HomeWorkspace({
         throw new Error("Target results layout not found");
       }
 
-      // Render with html2canvas!
-      const canvas = await html2canvas(targetElement, {
-        useCORS: true,
-        allowTaint: true,
-        scale: 2,
-        backgroundColor: null,
+      // Render with dom-to-image!
+      const snapshotB64 = await domtoimage.toPng(targetElement, {
+        cacheBust: true,
+        style: {
+          transform: "scale(1)",
+          transformOrigin: "top left"
+        }
       });
 
-      const snapshotB64 = canvas.toDataURL("image/png");
       const userId = auth.currentUser?.uid || "unknown";
       const studentName = auth.currentUser?.displayName || "طالب مميز";
 
@@ -583,9 +583,9 @@ export default function HomeWorkspace({
       setIsGeneratingShare(false);
 
     } catch (err) {
-      console.error("StitchLab html2canvas screenshot failed:", err);
+      console.error("StitchLab dom-to-image screenshot failed:", err);
       setIsGeneratingShare(false);
-      alert("⚠️ فشل التقاط واجهة التحدي بواسطة html2canvas. يرجى المحاولة لاحقاً.");
+      alert("⚠️ فشل التقاط واجهة التحدي بواسطة dom-to-image. يرجى المحاولة لاحقاً.");
     }
   };
   
@@ -1590,7 +1590,7 @@ export default function HomeWorkspace({
           </div>
 
           <div className="bg-white rounded-3xl border border-sky-100/95 hover:border-sky-205 transition-all p-4 flex flex-col items-center justify-center text-center select-none">
-            <div className="text-3xl mb-1.5 filter drop-shadow">📅</div>
+            <div className="text-3xl mb-1.5 filter drop-shadow">📚</div>
             <div className="space-y-0.5">
               <span className="block text-[10px] font-black text-slate-400 tracking-wide">الفصل الدراسي</span>
               <div className="text-sm font-black text-sky-950 leading-tight">
@@ -1600,11 +1600,10 @@ export default function HomeWorkspace({
           </div>
 
           <div className="bg-white rounded-3xl border border-amber-100/80 p-4 flex flex-col items-center justify-center text-center shadow-xs">
-            <div className="text-3xl mb-1.5 filter drop-shadow">🔓</div>
             <div className="space-y-0.5">
               <span className="block text-[10px] font-black text-slate-400 tracking-wide">مجموع المجموعات</span>
               <div className="text-xl font-black text-slate-900 leading-tight">
-                {(unlockedAdvertiserGroups || []).length || 1} مجموعات
+                {(unlockedAdvertiserGroups || []).length || 0} مجموعات
               </div>
             </div>
           </div>
@@ -1613,39 +1612,22 @@ export default function HomeWorkspace({
         {/* Button removed by user request */}
       </div>
 
-      {/* 📸 HIDDEN SNAPSHOT TARGET FOR HTML2CANVAS */}
+      {/* 📸 HIDDEN SNAPSHOT TARGET FOR DOM-TO-IMAGE */}
       <div 
         id="stitchlab-snapshot-results-card" 
         className="fixed top-0 left-[-9999px] w-[500px] p-6 bg-gradient-to-br from-[#120f2e] via-[#1a123a] to-[#25153a] border-4 border-purple-500 rounded-[32px] text-white space-y-6 select-none shadow-2xl"
         dir="rtl"
       >
-        <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-white/10 p-1 flex items-center justify-center">
-              <img 
-                src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" 
-                alt="StitchLab" 
-                className="w-10 h-10 object-contain"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-            <div>
-              <h2 className="text-lg font-black text-amber-300">StitchLab 🔮</h2>
-              <p className="text-[10px] text-purple-200 font-bold font-sans">المختبر والمدرب التفاعلي الذكي</p>
-            </div>
+        <div className="flex flex-col items-center justify-center gap-1.5 border-b border-white/10 pb-4 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-white/10 p-1 flex items-center justify-center shadow-lg">
+            <img 
+              src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" 
+              alt="StitchLab" 
+              className="w-12 h-12 object-contain"
+              referrerPolicy="no-referrer"
+            />
           </div>
-          <div className="text-left animate-pulse">
-            <span className="text-[10px] bg-pink-500/20 text-pink-300 border border-pink-400/30 px-2.5 py-1 rounded-full font-black">
-              تحدي دراسي ⚔️
-            </span>
-          </div>
-        </div>
-
-        <div className="text-center py-2">
-          <h3 className="text-xl font-extrabold text-white">هل تستطيع كسر رقمي القياسي؟ 📊🔥</h3>
-          <p className="text-xs text-slate-300 font-semibold mt-1">
-            مبارزة وتحدي في حفظ الكلمات وممارسة التحدث بطلاقة!
-          </p>
+          <h2 className="text-lg font-black text-amber-300 mt-1">StitchLab 🔮</h2>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -1658,18 +1640,13 @@ export default function HomeWorkspace({
             <div className="text-2xl font-black text-cyan-300 font-sans">المستوى {unlockedLevel}</div>
           </div>
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
-            <span className="text-[10px] font-bold text-purple-300">الفصل الدراسي 📅</span>
+            <span className="text-[10px] font-bold text-purple-300">الفصل الدراسي 📚</span>
             <div className="text-xs font-black text-white leading-tight mt-1 truncate">{studentSemester || "الفصل الدراسي الأول"}</div>
           </div>
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
-            <span className="text-[10px] font-bold text-purple-300">مجموع المجموعات 🔓</span>
-            <div className="text-xl font-black text-pink-300 font-sans">{(unlockedAdvertiserGroups || []).length || 1} مجموعات</div>
+            <span className="text-[10px] font-bold text-purple-300">مجموع المجموعات</span>
+            <div className="text-xl font-black text-pink-300 font-sans">{(unlockedAdvertiserGroups || []).length || 0} مجموعات</div>
           </div>
-        </div>
-
-        <div className="border-t border-white/10 pt-4 text-center space-y-1">
-          <p className="text-xs font-extrabold text-purple-200">صاحب الرصيد: {auth.currentUser?.displayName || "طالب مميز"}</p>
-          <p className="text-[9px] text-slate-400">انضم إلي وشعر بمتعة التعلم الحقيقية StitchLab</p>
         </div>
       </div>
 
@@ -2096,7 +2073,15 @@ export default function HomeWorkspace({
                           >
                             <div className="flex items-center gap-2">
                               <span className="text-sm">
-                                {isCompleted ? "✅" : isUnlocked ? "🎯" : "🔒"}
+                                {isCompleted ? (
+                                  <span className="text-sm text-emerald-500 font-bold">✅</span>
+                                ) : isActiveFrontier ? (
+                                  <span className="text-base text-pink-600 font-extrabold animate-bounce inline-block transform -rotate-12 filter drop-shadow">🔓</span>
+                                ) : isUnlocked ? (
+                                  <span className="text-base text-purple-600 font-semibold inline-block transform -rotate-12 filter drop-shadow">🔓</span>
+                                ) : (
+                                  <span className="text-sm text-slate-400 inline-block">🔒</span>
+                                )}
                               </span>
                               <div className="flex flex-col text-right">
                                 <span className={`text-xs font-black ${isActiveFrontier ? "text-pink-950" : isUnlocked ? "text-purple-950" : ""}`}>
@@ -2114,7 +2099,7 @@ export default function HomeWorkspace({
                               {isCompleted ? (
                                 <span className="text-[9px] bg-emerald-100 text-emerald-800 font-black px-2 py-0.5 rounded-full border border-emerald-200">جاهز ✓</span>
                               ) : isActiveFrontier ? (
-                                <span className="text-[9px] bg-pink-200 text-pink-800 font-black px-2 py-0.5 rounded-full border border-pink-300">الجديدة 🎀</span>
+                                <span className="text-[9px] bg-pink-200 text-pink-800 font-black px-2 py-0.5 rounded-full border border-pink-300">الجديدة 🔓</span>
                               ) : isUnlocked ? (
                                 <span className="text-[9px] bg-purple-200 text-purple-800 font-black px-2 py-0.5 rounded-full border border-purple-300">مفتوحة 🔓</span>
                               ) : (

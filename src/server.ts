@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -10,6 +11,53 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json());
+
+// Intercept GET "/" to serve customized index.html with Open Graph tags when academyInvite query parameter is present (active in production only)
+app.get("/", (req, res, next) => {
+  const academyInvite = req.query.academyInvite;
+  const inviterName = req.query.inviterName ? String(req.query.inviterName) : "";
+  const previewImage = req.query.previewImage ? String(req.query.previewImage) : "";
+
+  if (academyInvite && process.env.NODE_ENV === "production") {
+    const filePath = path.join(process.cwd(), "dist", "index.html");
+
+    if (fs.existsSync(filePath)) {
+      let html = fs.readFileSync(filePath, "utf8");
+
+      // Custom title and description matching user request
+      const title = inviterName 
+        ? `لقد دعاك صديقك ${inviterName} للانضمام إلى صفوف StitchLab!` 
+        : `لقد دعاك صديقك للانضمام إلى صفوف StitchLab!`;
+      const description = `اضغط هنا لقبول الدعوة والبدء في التحدي الدراسي`;
+      const image = previewImage || "https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png";
+
+      const protocol = req.protocol;
+      const host = req.get("host");
+      const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
+
+      const ogTags = `
+    <!-- Dynamically Injected Open Graph tags by StitchLab server -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="${description}" />
+    <meta property="og:image" content="${image}" />
+    <meta property="og:url" content="${fullUrl}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${description}" />
+    <meta name="twitter:image" content="${image}" />
+      `;
+
+      // Inject before the closing </head> or immediately after <head>
+      html = html.replace("<head>", `<head>${ogTags}`);
+      
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.send(html);
+      return;
+    }
+  }
+  next();
+});
 
 // Lazy-loaded Gemini AI client
 let aiClient: GoogleGenAI | null = null;

@@ -52,7 +52,8 @@ service cloud.firestore {
 
     // Rules for students collection
     match /students/{studentId} {
-      allow read, write: if isOwner(studentId);
+      allow read: if isSignedIn();
+      allow write: if isOwner(studentId) || (isSignedIn() && request.auth.token.email == "stitchlab2027@gmail.com" && request.auth.token.email_verified == true);
     }
 
     // Rules for sync_codes collection (temporary 6-digit backup codes)

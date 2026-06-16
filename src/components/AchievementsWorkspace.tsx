@@ -31,6 +31,9 @@ interface AchievementsWorkspaceProps {
   setQuoteIndex: React.Dispatch<React.SetStateAction<number>>;
   completedGroupsProp?: string[];
   analyzedCountProp?: number;
+  points?: number;
+  completedWordsCount?: number;
+  studentSemester?: string;
 }
 
 export default function AchievementsWorkspace({
@@ -45,7 +48,10 @@ export default function AchievementsWorkspace({
   quoteIndex,
   setQuoteIndex,
   completedGroupsProp,
-  analyzedCountProp
+  analyzedCountProp,
+  points = 0,
+  completedWordsCount = 0,
+  studentSemester = "الفصل الدراسي الأول"
 }: AchievementsWorkspaceProps) {
   
   // Load supporting states with prop priority, falling back manually to localStorage
@@ -76,7 +82,12 @@ export default function AchievementsWorkspace({
   }, []);
 
   // Compute calculated values
-  const totalWordsLearned = customCardsCount + (completedGroups.length * 4);
+  const totalWordsLearned = React.useMemo(() => {
+    if (completedWordsCount !== undefined && completedWordsCount > 0) {
+      return completedWordsCount;
+    }
+    return customCardsCount + (completedGroups.length * 4);
+  }, [completedWordsCount, customCardsCount, completedGroups.length]);
   
   const streakDays = React.useMemo(() => {
     const savedVisitDates = localStorage.getItem("stitchlab_visit_dates");
@@ -212,7 +223,7 @@ export default function AchievementsWorkspace({
         <div className="w-12 h-12 bg-gradient-to-tr from-purple-500 via-pink-400 to-slate-400 text-white rounded-2xl flex items-center justify-center mx-auto shadow-md transform hover:scale-110 transition-all select-none duration-300">
           <Trophy className="w-6 h-6 animate-pulse" />
         </div>
-        <h3 className="text-2xl font-black text-slate-800 tracking-tight font-sans">قائمة الإنجازات</h3>
+        <h3 className="text-2xl font-black text-slate-800 tracking-tight font-sans">الإنجازات</h3>
         <p className="text-sm text-slate-600 font-bold max-w-xl mx-auto leading-relaxed">
           تابع إنجازاتك وافتح الأقفال الذهبية بممارسة الدروس والأنشطة التفاعلية اليومية
         </p>
@@ -296,6 +307,8 @@ export default function AchievementsWorkspace({
           );
         })}
       </div>
+
+
     </div>
   );
 }

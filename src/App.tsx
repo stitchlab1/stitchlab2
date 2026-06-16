@@ -50,15 +50,17 @@ import {
   updateDoc,
   serverTimestamp,
   collection,
-  getDocs
+  getDocs,
+  writeBatch,
+  onSnapshot
 } from "firebase/firestore";
-import { findBackupFile, getBackupContent, saveBackup, type BackupPayload } from "./lib/googleDriveService";
+import { findBackupFile, getBackupContent, saveBackup, uploadPublicImage, type BackupPayload } from "./lib/googleDriveService";
 import HomeWorkspace from "./components/HomeWorkspace";
 import confetti from "canvas-confetti";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
 import LearningTimer from "./components/LearningTimer";
-import html2canvas from "html2canvas";
+import domtoimage from "dom-to-image";
 
 // Import newly refactored dynamic panels
 import ChatPanel from "./components/ChatPanel";
@@ -161,9 +163,16 @@ export default function App() {
         if (academyInvite) {
           console.log("StitchLab Academy Invite Detected! Inviter ID:", academyInvite);
           localStorage.setItem("stitchlab_academy_invite_id", academyInvite);
+          setActiveAcademyInviteId(academyInvite);
+          let decodedName = "زميلك الدراسي";
           if (inviterName) {
-            localStorage.setItem("stitchlab_academy_inviter_name", decodeURIComponent(inviterName));
+            try {
+              decodedName = decodeURIComponent(inviterName);
+            } catch (_) {}
+            localStorage.setItem("stitchlab_academy_inviter_name", decodedName);
           }
+          setActiveAcademyInviteName(decodedName);
+          setShowAcademyLanding(true);
         }
       } catch (e) {
         console.warn("StitchLab Challenge deep link resolution error:", e);
@@ -181,7 +190,8 @@ export default function App() {
 
   // Login / Authentication States
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
+  const [authMode, setAuthMode] = useState<"login" | "signup" | "forgot-password">("login");
+  const [showEmailVerificationScreen, setShowEmailVerificationScreen] = useState<boolean>(false);
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [name, setName] = useState<string>("");
@@ -222,6 +232,7 @@ export default function App() {
   });
   const [isDataLoaded, setIsDataLoaded] = useState<boolean>(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
   const isInitialLoad = React.useRef<boolean>(true);
 
   // Challenge states & modal triggers (Re-ordered after state definitions)
@@ -238,6 +249,78 @@ export default function App() {
   const [classmates, setClassmates] = useState<{ uid: string; name: string; email: string; joinedAt: string }[]>([]);
   const [loadingClassmates, setLoadingClassmates] = useState<boolean>(false);
   const [pendingAcademyInvite, setPendingAcademyInvite] = useState<{ id: string; name: string } | null>(null);
+  const [activeAcademyInviteId, setActiveAcademyInviteId] = useState<string | null>(null);
+  const [activeAcademyInviteName, setActiveAcademyInviteName] = useState<string | null>(null);
+  const [showAcademyLanding, setShowAcademyLanding] = useState<boolean>(false);
+
+  // 👑 ADMIN BULK RESET OPERATIONS
+  const [adminResetStep, setAdminResetStep] = useState<"idle" | "confirm" | "resetting" | "success" | "error">("idle");
+  const [resetErrorText, setResetErrorText] = useState<string>("");
+  const [resetCount, setResetCount] = useState<number>(0);
+
+  const triggerAdminBulkReset = async () => {
+    setAdminResetStep("resetting");
+    try {
+      const studentsCol = collection(db, "students");
+      const snap = await getDocs(studentsCol);
+
+      if (snap.empty) {
+        setResetCount(0);
+        setAdminResetStep("success");
+        return;
+      }
+
+      const batch = writeBatch(db);
+      let count = 0;
+
+      snap.forEach((snapshotDoc) => {
+        const studentId = snapshotDoc.id;
+        const docRef = doc(db, "students", studentId);
+        
+        batch.update(docRef, {
+          points: 0,
+          completedWordsCount: 0,
+          quizAttempts: 0,
+          quizScore: 0,
+          completedGroups: [],
+          updatedAt: new Date().toISOString()
+        });
+        count++;
+      });
+
+      await batch.commit();
+      setResetCount(count);
+
+      // Locally apply state resets if admin is also logged in as student
+      if (auth.currentUser && auth.currentUser.email === "stitchlab2027@gmail.com") {
+        setPoints(0);
+        setCompletedWordsCount(0);
+        setQuizAttempts(0);
+        setQuizScore(0);
+        setCompletedGroups([]);
+        
+        const userProgressKey = `stitchlab_student_${auth.currentUser.uid}_progress`;
+        const savedProgressStr = localStorage.getItem(userProgressKey);
+        if (savedProgressStr) {
+          try {
+            const parsed = JSON.parse(savedProgressStr);
+            parsed.points = 0;
+            parsed.completedWordsCount = 0;
+            parsed.quizAttempts = 0;
+            parsed.quizScore = 0;
+            parsed.completedGroups = [];
+            localStorage.setItem(userProgressKey, JSON.stringify(parsed));
+          } catch (_) {}
+        }
+      }
+
+      setAdminResetStep("success");
+    } catch (err: any) {
+      console.error("Error committing bulk reset on client-sdk:", err);
+      setResetErrorText(err?.message || String(err));
+      setAdminResetStep("error");
+    }
+  };
 
   const fetchClassmates = async () => {
     if (!auth.currentUser) return;
@@ -260,36 +343,79 @@ export default function App() {
     }
   };
 
+  const safeCopyToClipboard = (text: string, successMessage: string = "📋 تم النسخ بنجاح!") => {
+    try {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, 99999);
+      const successful = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (successful) {
+        alert(successMessage);
+      } else {
+        throw new Error("Unable to execCommand('copy')");
+      }
+    } catch (err) {
+      window.prompt("🔒 تعذر النسخ التلقائي بسبب قيود المتصفح. يرجى نسخ النص يدوياً من الحقل المظلل بالأسفل:", text);
+    }
+  };
+
   const generateAcademyInviteLink = async () => {
     setIsGeneratingAcademyInvite(true);
+    let imgData = "";
+    let publicImageUrl = "";
+    
+    const uid = auth.currentUser?.uid || "unknown";
+    const studentName = currentUser?.name || auth.currentUser?.displayName || "طالب مميز";
+    
     try {
       const target = document.getElementById("stitchlab-workspace") || document.body;
-      let imgData = "";
-      if (html2canvas) {
-        const canvas = await html2canvas(target, {
-          useCORS: true,
-          allowTaint: true,
-          scale: 1.1,
-          logging: false
+      if (domtoimage) {
+        imgData = await domtoimage.toPng(target, {
+          cacheBust: true,
+          style: {
+            transform: "scale(1)",
+            transformOrigin: "top left"
+          }
         });
-        imgData = canvas.toDataURL("image/png");
         setAcademyInviteImage(imgData);
+
+        // If Google Drive is integrated, upload the image to make it accessible to Open Graph crawlers!
+        if (driveToken && imgData) {
+          try {
+            console.log("StitchLab: Uploading public invite snapshot card to Google Drive...");
+            const fileName = `stitchlab_invite_${uid}_${Date.now()}.png`;
+            publicImageUrl = await uploadPublicImage(driveToken, imgData, fileName);
+            console.log("StitchLab: Public snapshot hosted at:", publicImageUrl);
+          } catch (uploadErr) {
+            console.error("Google Drive public upload failed:", uploadErr);
+          }
+        }
       }
       
-      const uid = auth.currentUser?.uid || "unknown";
-      const studentName = currentUser?.name || auth.currentUser?.displayName || "طالب مميز";
-      const link = `${window.location.origin}/?academyInvite=${uid}&inviterName=${encodeURIComponent(studentName)}`;
+      const paramImage = publicImageUrl ? `&previewImage=${encodeURIComponent(publicImageUrl)}` : "";
+      const link = `${window.location.origin}/?academyInvite=${uid}&inviterName=${encodeURIComponent(studentName)}${paramImage}`;
       
       setAcademyInviteUrl(link);
-      navigator.clipboard.writeText(link);
+
+      if (!driveToken) {
+        alert("🔮 تم إنشاء رابط دعوتك بنجاح! \n\nيمكنك الآن نسخه يدوياً بكل سهولة من المربع الذي ظهر بالأسفل لمشاركتها مع زملائك.\n\n🔒 تلميح: عند ربط حسابك بـ Google Drive، سيقوم التطبيق برفع لقطة الشاشة تلقائياً لتظهر للمستلم في بطاقة معاينة تطبيقات التواصل (WhatsApp، Telegram إلخ) بشكل احترافي!");
+      } else {
+        alert("🔮 تم التقاط لقطة الشاشة ورفعها بنجاح إلى Google Drive لإنشاء بطاقة معاينة مذهلة! \n\nلقد تم إنشاء رابط الدعوة الذكي، يرجى نسخه باستخدام زر 'نسخ يدوياً' بالأسفل.");
+      }
+
     } catch (err) {
       console.error("StitchLab Academy snapshot failed:", err);
       // Fallback
-      const uid = auth.currentUser?.uid || "unknown";
-      const studentName = currentUser?.name || auth.currentUser?.displayName || "طالب مميز";
       const link = `${window.location.origin}/?academyInvite=${uid}&inviterName=${encodeURIComponent(studentName)}`;
       setAcademyInviteUrl(link);
-      navigator.clipboard.writeText(link);
+      alert("🔮 تم إنشاء رابط الدعوة الافتراضي! يرجى نسخه يدوياً من المربع بالأسفل.");
     } finally {
       setIsGeneratingAcademyInvite(false);
     }
@@ -566,10 +692,24 @@ export default function App() {
     console.log("Loading saved progress...");
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        setAuthError("");
+        
+        // Safe check for email verification with password login provider type
+        const isEmailVerified = firebaseUser.emailVerified;
+        const isPassProvider = firebaseUser.providerData.some(p => p.providerId === "password");
+
+        if (isPassProvider && !isEmailVerified) {
+          setIsLoggedIn(true);
+          setShowEmailVerificationScreen(true);
+          setIsDataLoaded(true);
+          setAuthLoading(false);
+          return;
+        }
+
         setIsLoggedIn(true);
+        setShowEmailVerificationScreen(false);
         setIsDataLoaded(false);
         setAuthLoading(true);
-        setAuthError("");
         
         const uid = firebaseUser.uid;
         let progress: any = null;
@@ -670,6 +810,7 @@ export default function App() {
       } else {
         setIsLoggedIn(false);
         setCurrentUser(null);
+        
         setDriveToken(null);
         setDriveFileId(null);
         setCloudDriveBackup(null);
@@ -1036,6 +1177,159 @@ export default function App() {
     studentSemester
   ]);
 
+  // 🔄 LIVE FIRESTORE STUDENT DATA SYNCHRONIZATION WITH ONSNAPSHOT
+  useEffect(() => {
+    if (!isLoggedIn || !auth.currentUser) {
+      setIsCloudSynced(false);
+      return;
+    }
+    
+    const uid = auth.currentUser.uid;
+    const docRef = doc(db, "students", uid);
+    
+    console.log("[StitchLab Cloud Sync] Setting up live onSnapshot listener for student UID:", uid);
+    
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log("[StitchLab Cloud Sync] Live data received from Firestore:", data);
+        
+        // Update states only if they are genuinely different to prevent loops
+        if (data.points !== undefined) {
+          setPoints(prev => prev !== data.points ? data.points : prev);
+        }
+        if (data.completedWordsCount !== undefined) {
+          setCompletedWordsCount(prev => prev !== data.completedWordsCount ? data.completedWordsCount : prev);
+        }
+        if (data.quizAttempts !== undefined) {
+          setQuizAttempts(prev => prev !== data.quizAttempts ? data.quizAttempts : prev);
+        }
+        if (data.quizScore !== undefined) {
+          setQuizScore(prev => prev !== data.quizScore ? data.quizScore : prev);
+        }
+        if (data.completedGroups !== undefined) {
+          setCompletedGroups(prev => JSON.stringify(prev) !== JSON.stringify(data.completedGroups) ? data.completedGroups : prev);
+        }
+        if (data.level !== undefined) {
+          setUserLevel(prev => prev !== data.level ? data.level : prev);
+        }
+        if (data.studentSemester !== undefined) {
+          setStudentSemester(prev => prev !== data.studentSemester ? data.studentSemester : prev);
+        }
+        if (data.analyzedCount !== undefined) {
+          setAnalyzedCount(prev => prev !== data.analyzedCount ? data.analyzedCount : prev);
+        }
+        if (data.conversationsHad !== undefined) {
+          setConversationsHad(prev => prev !== data.conversationsHad ? data.conversationsHad : prev);
+        }
+      } else {
+        console.log("[StitchLab Cloud Sync] Firestore student document not found, launching initialization...");
+        setDoc(docRef, {
+          name: currentUser?.name || auth.currentUser?.displayName || "طالب مميز",
+          email: auth.currentUser?.email || "",
+          points: points,
+          completedWordsCount: completedWordsCount,
+          quizAttempts: quizAttempts,
+          quizScore: quizScore,
+          completedGroups: completedGroups,
+          level: userLevel,
+          studentSemester: studentSemester,
+          analyzedCount: analyzedCount,
+          conversationsHad: conversationsHad,
+          updatedAt: new Date().toISOString()
+        }, { merge: true }).catch(err => {
+          console.error("[StitchLab Cloud Sync] Error initializing empty student document:", err);
+        });
+      }
+      setIsCloudSynced(true);
+    }, (error) => {
+      console.error("[StitchLab Cloud Sync] Snapshot listener failed or was cancelled:", error);
+    });
+    
+    return () => {
+      console.log("[StitchLab Cloud Sync] Cleaning up onSnapshot listener for student UID:", uid);
+      unsubscribe();
+    };
+  }, [isLoggedIn, auth.currentUser?.uid]);
+
+  // 📤 AUTO-SYNC BACK LOCAL PROGRESS TO FIRESTORE
+  useEffect(() => {
+    if (!isLoggedIn || !auth.currentUser || !isCloudSynced) return;
+    
+    const uid = auth.currentUser.uid;
+    const docRef = doc(db, "students", uid);
+    
+    const timer = setTimeout(async () => {
+      try {
+        await setDoc(docRef, {
+          points: points,
+          completedWordsCount: completedWordsCount,
+          quizAttempts: quizAttempts,
+          quizScore: quizScore,
+          completedGroups: completedGroups,
+          level: userLevel,
+          studentSemester: studentSemester,
+          analyzedCount: analyzedCount,
+          conversationsHad: conversationsHad,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+        console.log("[StitchLab Cloud Sync] Auto-write complete: local updates saved successfully.");
+      } catch (err) {
+        console.error("[StitchLab Cloud Sync] Auto-write update failed:", err);
+      }
+    }, 1200); // 1.2s debounce to allow multiple interactions to bundle cleanly
+
+    return () => clearTimeout(timer);
+  }, [
+    isLoggedIn,
+    isCloudSynced,
+    points,
+    completedWordsCount,
+    quizAttempts,
+    quizScore,
+    completedGroups,
+    userLevel,
+    studentSemester,
+    analyzedCount,
+    conversationsHad
+  ]);
+
+  // 🔄 LIVE FIRESTORE CLASSMATES SYNCHRONIZATION
+  useEffect(() => {
+    if (!isLoggedIn || !auth.currentUser || classmates.length === 0) return;
+
+    const classmateUids = classmates.map(c => c.uid).join(",");
+    console.log("[StitchLab Cloud Sync] Setting up live statistics listeners for classmates:", classmateUids);
+
+    const unsubscribers = classmates.map((cl) => {
+      const studentDocRef = doc(db, "students", cl.uid);
+      return onSnapshot(studentDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const studentData = docSnap.data();
+          setClassmates((prevList) =>
+            prevList.map((item) =>
+              item.uid === cl.uid
+                ? {
+                    ...item,
+                    studentSemester: studentData.studentSemester || "الفصل الدراسي الأول",
+                    completedWordsCount: studentData.completedWordsCount || 0,
+                    completedGroupsCount: (studentData.completedGroups || []).length || 0,
+                  }
+                : item
+            )
+          );
+        }
+      }, (err) => {
+        console.error(`[StitchLab Cloud Sync] Failed to load statistics for classmate ${cl.uid}:`, err);
+      });
+    });
+
+    return () => {
+      console.log("[StitchLab Cloud Sync] Cleaning up live statistics listeners for classmates:", classmateUids);
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [isLoggedIn, classmates.length, classmates.map(c => c.uid).join(",")]);
+
   // Alert student if they try to close the tab without committing their database updates
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1158,9 +1452,18 @@ export default function App() {
     setAuthLoading(true);
     try {
       const { signInWithEmailAndPassword } = await import("firebase/auth");
-      await signInWithEmailAndPassword(auth, email, password);
-      // Immediately after logging in with email, show 'هيا لنكمل' screen
-      setShowContinueScreen(true);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      
+      // Update/reload verification status
+      await userCredential.user.reload();
+      if (!userCredential.user.emailVerified) {
+        setShowEmailVerificationScreen(true);
+        setShowContinueScreen(false);
+      } else {
+        setShowEmailVerificationScreen(false);
+        setShowContinueScreen(false);
+        setIsLoggedIn(true);
+      }
     } catch (err: any) {
       console.error("Email login failed:", err);
       let errMsg = "فشل تسجيل الدخول. يرجى التثبت من البريد الإلكتروني وكلمة المرور.";
@@ -1188,11 +1491,20 @@ export default function App() {
     setAuthError("");
     setAuthLoading(true);
     try {
-      const { createUserWithEmailAndPassword, updateProfile } = await import("firebase/auth");
+      const { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } = await import("firebase/auth");
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
-      // Immediately after registering with email, show 'هيا لنكمل' screen
-      setShowContinueScreen(true);
+      
+      // Send verification link immediately to new student inbox
+      try {
+        await sendEmailVerification(userCredential.user);
+      } catch (verificationErr) {
+        console.error("Verification email sending failed:", verificationErr);
+      }
+      
+      // Intercept with verification pending flow
+      setShowEmailVerificationScreen(true);
+      setShowContinueScreen(false);
     } catch (err: any) {
       console.error("Email registration failed:", err);
       let errMsg = "فشل إنشاء الحساب. يرجى التثبت من صحة البريد الإلكتروني والمحاولة مرة أخرى.";
@@ -1202,6 +1514,33 @@ export default function App() {
         errMsg = "صيغة البريد الإلكتروني غير صالحة.";
       } else if (err.code === "auth/weak-password") {
         errMsg = "كلمة المرور ضعيفة جدًا ونقترح اختيار كلمة مرور أقوى.";
+      }
+      setAuthError(errMsg);
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      setAuthError("يرجى إدخال البريد الإلكتروني لإعادة تعيين كلمة المرور.");
+      return;
+    }
+    setAuthError("");
+    setAuthSuccessMessage("");
+    setAuthLoading(true);
+    try {
+      const { sendPasswordResetEmail } = await import("firebase/auth");
+      await sendPasswordResetEmail(auth, email);
+      setAuthSuccessMessage("تم إرسال رابط/كود إعادة تعيين كلمة المرور بنجاح! يرجى التحقق من بريدك الإلكتروني (والرسائل غير المرغوب فيها Spam) وتغيير كلمة المرور بنجاح.");
+    } catch (err: any) {
+      console.error("Password reset error:", err);
+      let errMsg = "فشل إرسال رسالة تعيين كلمة المرور. يرجى مراجعة البريد والمحاولة مرة أخرى.";
+      if (err.code === "auth/user-not-found") {
+        errMsg = "لم نجد حساباً مسجلاً بهذا البريد الإلكتروني. يرجى التحقق منه.";
+      } else if (err.code === "auth/invalid-email") {
+        errMsg = "صيغة البريد الإلكتروني غير صالحة.";
       }
       setAuthError(errMsg);
     } finally {
@@ -1852,7 +2191,131 @@ export default function App() {
     <div id="stitchlab-main" className="min-h-screen bg-slate-50 text-slate-900 font-sans antialiased selection:bg-purple-500 selection:text-white" dir="rtl">
       
       {/* 1. NOT LOGGED IN LAYOUT / OR LOADING SATELLITE */}
-      {showContinueScreen ? (
+      {showEmailVerificationScreen && auth.currentUser ? (
+        <div id="stitchlab-email-verify-step" className="flex min-h-screen flex-col items-center justify-center p-4 md:p-8 bg-gradient-to-br from-pink-50 via-[#FFF9FB] to-purple-50 text-slate-800 relative overflow-hidden" dir="rtl">
+          {/* Ambient luminous flows */}
+          <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-pink-400/10 rounded-full blur-[120px] pointer-events-none"></div>
+          <div className="absolute bottom-[-20%] left-[-10%] w-[500px] h-[500px] bg-purple-300/10 rounded-full blur-[120px] pointer-events-none"></div>
+          
+          <div className="w-full max-w-md space-y-6 relative z-10 text-center animate-fadeIn">
+            <div className="space-y-2">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-white border border-pink-100 shadow-xl overflow-hidden mb-2 p-1.5">
+                <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
+              </div>
+              <h1 id="email-verify-heading" className="text-3xl font-extrabold text-purple-950 tracking-tight">
+                تأكيد البريد الإلكتروني ✉️
+              </h1>
+              <p className="text-sm text-purple-900/80 font-bold">
+                خطوة واحدة لتفعيل حسابك والبدء!
+              </p>
+            </div>
+
+            <div className="bg-white/95 backdrop-blur-md rounded-[32px] border border-pink-100/50 p-6 md:p-8 shadow-[0_25px_60px_rgba(236,72,153,0.06)] space-y-5 text-right">
+              <div className="p-4 bg-purple-50 rounded-2xl border border-purple-100 text-purple-950 space-y-2 text-right">
+                <p className="text-xs font-black">
+                  📨 لقد أرسلنا رابط تفعيل الحساب إلى البريد الإلكتروني:
+                </p>
+                <p className="text-xs font-mono font-black text-pink-600 block text-right">
+                  {auth.currentUser.email}
+                </p>
+              </div>
+
+              <p className="text-xs leading-relaxed text-slate-600 font-bold leading-normal">
+                يرجى الانتقال لعلبة الوارد في بريدك الإلكتروني والضغط على الرابط المرسل لتفعيل حسابك بنجاح. 
+                <br />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  💡 إذا لم تجدها، تأكد من مراجعة صندوق الرسائل غير المرغوب فيها (Spam / Junk Mail).
+                </span>
+              </p>
+
+              {authError && (
+                <div className="p-4 rounded-2xl text-xs bg-rose-50 border border-rose-150 text-rose-800 flex items-start gap-2 text-right">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed font-bold flex-1">{authError}</div>
+                </div>
+              )}
+
+              {authSuccessMessage && (
+                <div className="p-4 rounded-2xl text-xs bg-emerald-50 border border-emerald-100 text-emerald-800 font-bold leading-relaxed text-right animate-fadeIn">
+                  {authSuccessMessage}
+                </div>
+              )}
+
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setAuthLoading(true);
+                    setAuthError("");
+                    setAuthSuccessMessage("");
+                    try {
+                      await auth.currentUser?.reload();
+                      if (auth.currentUser?.emailVerified) {
+                        setAuthSuccessMessage("🎉 تمت عملية تفعيل حسابك بنجاح! جاري تحويلك...");
+                        setTimeout(() => {
+                          setShowEmailVerificationScreen(false);
+                          setShowContinueScreen(true);
+                          setAuthSuccessMessage("");
+                        }, 1200);
+                      } else {
+                        setAuthError("❌ بريدك الإلكتروني غير مفعّل بعد. يرجى الضغط على الرابط المرسل لبريدك الإلكتروني للتفعيل، ثم النقر هنا مجدداً.");
+                      }
+                    } catch (err: any) {
+                      setAuthError("فشل التحقق من التفعيل. يرجى إعادة المحاولة.");
+                    } finally {
+                      setAuthLoading(false);
+                    }
+                  }}
+                  disabled={authLoading}
+                  className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-lg active:scale-95 hover:shadow-purple-500/10 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {authLoading ? (
+                    <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                  ) : (
+                    "لقد قمت بتفعيل بريدي بنجاح! استمر 🚀"
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setAuthLoading(true);
+                    setAuthError("");
+                    setAuthSuccessMessage("");
+                    try {
+                      const { sendEmailVerification } = await import("firebase/auth");
+                      if (auth.currentUser) {
+                        await sendEmailVerification(auth.currentUser);
+                        setAuthSuccessMessage("📨 تم إعادة إرسال رابط التفعيل بنجاح! يرجى مراجعة بريدك الإلكتروني.");
+                      }
+                    } catch (err: any) {
+                      console.error("Resend verification error:", err);
+                      setAuthError("فشل إعادة إرسال رابط التفعيل. يرجى الانتظار دقيقة والمحاولة مجدداً.");
+                    } finally {
+                      setAuthLoading(false);
+                    }
+                  }}
+                  disabled={authLoading}
+                  className="w-full py-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-extrabold rounded-xl text-xs transition-all text-center cursor-pointer disabled:opacity-50"
+                >
+                  أعد إرسال رابط التفعيل بالبريد الإلكتروني ✉️
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setShowEmailVerificationScreen(false);
+                    await handleLogout();
+                  }}
+                  className="w-full py-2.5 text-[11px] text-slate-400 hover:text-rose-500 font-bold transition-all text-center cursor-pointer hover:underline"
+                >
+                  تسجيل الخروج والرجوع للخلف ↩
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : showContinueScreen ? (
         <div id="stitchlab-continue-step" className="flex min-h-screen flex-col items-center justify-center p-4 md:p-8 bg-gradient-to-br from-pink-50 via-[#FFF9FB] to-purple-50 text-slate-800 relative overflow-hidden" dir="rtl">
           {/* Ambient luminous flows */}
           <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-pink-400/10 rounded-full blur-[120px] pointer-events-none"></div>
@@ -1908,16 +2371,7 @@ export default function App() {
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  setIsLoggedIn(true);
-                  setShowContinueScreen(false);
-                }}
-                className="w-full py-2.5 text-[11px] text-slate-400 hover:text-slate-600 font-bold transition-all underline cursor-pointer"
-              >
-                تخطي المزامنة والدخول الآن 🎓
-              </button>
+
             </div>
           </div>
         </div>
@@ -1995,6 +2449,73 @@ export default function App() {
           
           <div className="w-full max-w-md space-y-6 relative z-10">
             
+            {/* 🎓 STITCHLAB ACADEMY PARTNER WELCOME GATEWAY CARD */}
+            {showAcademyLanding && activeAcademyInviteId && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-gradient-to-br from-[#120e35] via-[#1b154c] to-[#251b66] border border-pink-500/30 rounded-[32px] p-6 shadow-2xl space-y-4 relative overflow-hidden text-right text-white"
+                dir="rtl"
+              >
+                
+                {/* Decorative glows */}
+                <div className="absolute top-0 right-0 w-24 h-24 bg-pink-500/20 rounded-full blur-2xl pointer-events-none"></div>
+                <div className="absolute bottom-0 left-0 w-24 h-24 bg-purple-500/20 rounded-full blur-2xl pointer-events-none"></div>
+
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-r from-pink-500 to-purple-600 flex items-center justify-center text-2xl shrink-0 shadow-lg">
+                    🎓
+                  </div>
+                  <div className="space-y-0.5">
+                    <span className="text-[10px] bg-amber-400 text-slate-950 font-black px-3 py-1 rounded-full inline-block animate-pulse">
+                      دعوة دراسة ومزاملة حصرية ✨
+                    </span>
+                    <h3 className="text-sm font-black text-white pt-1">
+                      أكاديمية StitchLab للتميز والتحدث بطلاقة
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 p-4 rounded-2xl space-y-2">
+                  <p className="text-xs font-bold leading-relaxed text-purple-200">
+                    أهلاً بك المبدع! لقد دعاك صديقك <span className="text-pink-400 font-extrabold underline">{activeAcademyInviteName || "زميلك"}</span> للانضمام إلى صفوف أكاديمية StitchLab.
+                  </p>
+                  <p className="text-[11px] text-slate-300 leading-relaxed font-bold">
+                    بوابة آمنة تماماً تفتح للجميع مجاناً للتفاعل، وحفظ الكلمات ومشاركة تقدم المهارات ثنائياً!
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("signup");
+                      const element = document.getElementById("stitchlab-brand-heading");
+                      if (element) {
+                        element.scrollIntoView({ behavior: "smooth" });
+                      }
+                    }}
+                    className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white text-xs font-black py-3.5 px-6 rounded-2xl cursor-pointer active:scale-95 transition-all shadow-md shadow-pink-500/20 text-center flex items-center justify-center gap-1.5"
+                  >
+                    <span>قبول الدعوة وإنشاء حسابي المجاني للبدء 🚀</span>
+                  </button>
+                  <div className="flex justify-between items-center px-1">
+                    <p className="text-[9px] text-slate-400 font-semibold leading-normal">
+                      * إذا كان لديك حساب بالفعل، قم بتسجيل الدخول بالأسفل وسيقبل حسابك الدعوة فوراً.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAcademyLanding(false)}
+                      className="text-[10px] text-pink-400 hover:text-pink-300 font-bold underline shrink-0 cursor-pointer"
+                    >
+                      إغلاق ✕
+                    </button>
+                  </div>
+                </div>
+
+              </motion.div>
+            )}
+            
             <div className="text-center space-y-2">
               <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-white border border-pink-100 shadow-xl overflow-hidden mb-2 p-1.5 animate-fadeIn">
                 <img src="https://raw.githubusercontent.com/stitchlab1/stitchlab2/0ceec11a5ca77c5d4607a90cab424bc9ec880155/stitchlab_icon_hd.png" alt="stitchLab Logo" referrerPolicy="no-referrer" className="w-full h-full object-contain" />
@@ -2003,9 +2524,6 @@ export default function App() {
                 <span className="text-purple-600 font-extrabold">Stitch</span>
                 <span className="text-pink-500 font-black">Lab</span>
               </h1>
-              <p className="text-xs text-purple-900/80 font-bold tracking-wide antialiased">
-                المختبر والمدرب التفاعلي الذكي للتحدث بطلاقة
-              </p>
               <div className="w-20 h-1 bg-gradient-to-r from-purple-600 to-pink-500 mx-auto rounded-full mt-4"></div>
             </div>
 
@@ -2017,9 +2535,6 @@ export default function App() {
                 <span className="text-xs bg-purple-100 text-purple-950 font-black px-3.5 py-1.5 rounded-full border border-purple-200 inline-block">
                   بوابة الطالب الذكية 🎓
                 </span>
-                <p className="text-[11px] text-slate-400 font-bold pt-1.5">
-                  أهلاً بك في فضاء التدريب التفاعلي على اللغة الإنجليزية.
-                </p>
               </div>
 
               {/* Selector Tabs (Login / Sign Up) */}
@@ -2029,6 +2544,7 @@ export default function App() {
                   onClick={() => {
                     setAuthMode("login");
                     setAuthError("");
+                    setAuthSuccessMessage("");
                   }}
                   className={`flex-1 py-2.5 text-center text-xs font-black transition-all rounded-xl cursor-pointer ${
                     authMode === "login"
@@ -2043,8 +2559,9 @@ export default function App() {
                   onClick={() => {
                     setAuthMode("signup");
                     setAuthError("");
+                    setAuthSuccessMessage("");
                   }}
-                  className={`flex-1 py-2.5 text-center text-xs font-black transition-all rounded-xl cursor-pointer ${
+                  className={`flex-1 py-1.5 text-center text-xs font-black transition-all rounded-xl cursor-pointer ${
                     authMode === "signup"
                       ? "bg-white text-purple-950 shadow-sm"
                       : "text-slate-500 hover:text-slate-800"
@@ -2061,61 +2578,130 @@ export default function App() {
                 </div>
               )}
 
+              {authSuccessMessage && (
+                <div className="p-4 rounded-2xl text-[11px] bg-emerald-50 border border-emerald-100 text-emerald-800 font-bold leading-relaxed text-right animate-fadeIn">
+                  🎉 {authSuccessMessage}
+                </div>
+              )}
+
               {/* Form implementation */}
-              <form onSubmit={authMode === "login" ? handleEmailSignIn : handleEmailSignUp} className="space-y-3">
-                {authMode === "signup" && (
+              {authMode !== "forgot-password" ? (
+                <form onSubmit={authMode === "login" ? handleEmailSignIn : handleEmailSignUp} className="space-y-3">
+                  {authMode === "signup" && (
+                    <div className="space-y-1 text-right">
+                      <label className="text-[10px] font-black text-slate-500 mr-1 block">الاسم ✏️</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="عبدالله محمد"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
+                      />
+                    </div>
+                  )}
+
                   <div className="space-y-1 text-right">
-                    <label className="text-[10px] font-black text-slate-500 mr-1 block">الاسم الشخصي واللقب ✏️</label>
+                    <label className="text-[10px] font-black text-slate-500 mr-1 block">البريد الإلكتروني ✉️</label>
                     <input
-                      type="text"
+                      type="email"
                       required
-                      placeholder="عبدالله محمد"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      placeholder="student@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
                     />
                   </div>
-                )}
 
-                <div className="space-y-1 text-right">
-                  <label className="text-[10px] font-black text-slate-500 mr-1 block">البريد الإلكتروني ✉️</label>
-                  <input
-                    type="email"
-                    required
-                    placeholder="student@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
-                  />
-                </div>
+                  <div className="space-y-1 text-right">
+                    <label className="text-[10px] font-black text-slate-500 mr-1 block">كلمة المرور 🔒</label>
+                    <input
+                      type="password"
+                      required
+                      minLength={6}
+                      placeholder="******"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
+                    />
+                  </div>
 
-                <div className="space-y-1 text-right">
-                  <label className="text-[10px] font-black text-slate-500 mr-1 block">كلمة المرور 🔒</label>
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    placeholder="******"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={authLoading}
-                  className="w-full mt-3 py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-md hover:shadow-purple-500/15 transition-all text-center flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                >
-                  {authLoading ? (
-                    <span className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
-                  ) : authMode === "login" ? (
-                    "دخول للمختبر 🗝️"
-                  ) : (
-                    "إنشاء الحساب والمتابعة 🎯"
+                  {authMode === "login" && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAuthMode("forgot-password");
+                          setAuthError("");
+                          setAuthSuccessMessage("");
+                        }}
+                        className="text-[10px] text-purple-600 hover:text-purple-700 font-extrabold hover:underline cursor-pointer"
+                      >
+                        🔑 نسيت كلمة المرور؟ إعادة تعيين كلمة المرور
+                      </button>
+                    </div>
                   )}
-                </button>
-              </form>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full mt-3 py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-md hover:shadow-purple-500/15 transition-all text-center flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {authLoading ? (
+                      <span className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                    ) : authMode === "login" ? (
+                      "دخول للمختبر 🗝️"
+                    ) : (
+                      "إنشاء الحساب والمتابعة 🎯"
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleForgotPassword} className="space-y-3.5">
+                  <div className="text-right space-y-1">
+                    <h3 className="text-xs font-black text-purple-950">إعادة تعيين كلمة المرور 🔑</h3>
+                    <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                      أدخل بريدك الإلكتروني المسجل أدناه لإرسال كود/رابط تعيين كلمة مرور جديدة وتعيينها لحسابك مباشرة.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1 text-right">
+                    <label className="text-[10px] font-black text-slate-500 mr-1 block">البريد الإلكتروني لحسابك ✉️</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="student@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-xs font-bold focus:bg-white focus:ring-2 focus:ring-purple-400 outline-none transition-all text-right"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={authLoading}
+                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-extrabold rounded-2xl text-xs shadow-md transition-all text-center flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  >
+                    {authLoading ? (
+                      <span className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin"></span>
+                    ) : (
+                      "إرسال كود التعيين بالبريد 📤"
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode("login");
+                      setAuthError("");
+                      setAuthSuccessMessage("");
+                    }}
+                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all text-center cursor-pointer"
+                  >
+                    ↩ العودة لتسجيل الدخول
+                  </button>
+                </form>
+              )}
 
               {/* Separator line */}
               <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 py-1">
@@ -2191,7 +2777,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setShowSettingsModal(true)}
-                      className={`py-1.5 px-3.5 sm:px-4 rounded-xl text-xs font-black transition-all duration-300 flex items-center gap-1.5 border cursor-pointer ${
+                      className={`py-1.5 px-3.5 sm:px-4 rounded-xl text-xs font-black transition-all duration-300 flex items-center gap-1.5 border cursor-pointer active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white active:border-transparent active:scale-95 ${
                         showSettingsModal
                           ? "text-white bg-gradient-to-r from-purple-600 to-pink-500 border-transparent shadow-md scale-105"
                           : "text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-100/60"
@@ -2484,6 +3070,9 @@ export default function App() {
                     DAILY_QUOTES={DAILY_QUOTES}
                     quoteIndex={quoteIndex}
                     setQuoteIndex={setQuoteIndex}
+                    points={points}
+                    completedWordsCount={completedWordsCount}
+                    studentSemester={studentSemester}
                   />
                 )}
 
@@ -2733,16 +3322,16 @@ export default function App() {
                       type="button"
                       disabled={isGeneratingAcademyInvite}
                       onClick={generateAcademyInviteLink}
-                      className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-black rounded-xl text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                      className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-black rounded-xl text-xs transition-colors shadow-sm cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white"
                     >
                       {isGeneratingAcademyInvite ? (
                         <>
                           <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin ml-1"></span>
-                          <span>جاري التقاط شاشة الصف...</span>
+                          <span>جاري إنشاء رابط دعوتك...</span>
                         </>
                       ) : (
                         <>
-                          <span>📸 التقاط شاشتي وإنشاء الرابط</span>
+                          <span>🔗 إنشاء رابط الدعوة للأكاديمية</span>
                         </>
                       )}
                     </button>
@@ -2750,33 +3339,30 @@ export default function App() {
                     {/* Copied link display */}
                     {academyInviteUrl && (
                       <div className="pt-3 border-t border-purple-100/70 space-y-2 animate-fadeIn text-right">
-                        {academyInviteImage && (
-                          <div className="border border-purple-100 rounded-xl overflow-hidden shadow-xs bg-slate-900 max-h-[110px] w-full relative">
-                            <img src={academyInviteImage} alt="شاشتك" className="w-full h-full object-cover" />
-                            <div className="absolute inset-0 bg-slate-950/20 flex items-center justify-center">
-                              <span className="bg-slate-900/80 text-white text-[9px] px-2 py-0.5 rounded-full font-bold">تم حفظ لقطة شاشة صفك ✓</span>
-                            </div>
-                          </div>
-                        )}
-                        <p className="text-[10px] text-pink-700 font-extrabold leading-normal">
-                          تم نسخ رابط دعوتك بنجاح! شاركه الآن مع صديقك:
+                        <p className="text-[10px] text-purple-950 font-extrabold leading-normal">
+                          🔮 رابط دعوتك الذكي جاهز! انسخه الآن لمشاركته مع صديقك:
                         </p>
                         <div className="flex gap-1.5 items-center">
                           <input 
+                            id="stitchlab-academy-invite-input"
                             type="text" 
                             readOnly 
                             value={academyInviteUrl} 
-                            className="flex-1 bg-white border border-slate-200 rounded-lg p-1.5 text-[9px] font-mono text-slate-500 select-all"
+                            onClick={(e) => {
+                              const target = e.currentTarget;
+                              target.select();
+                              target.setSelectionRange(0, 99999);
+                            }}
+                            className="flex-1 bg-white border border-purple-200 rounded-lg p-1.5 text-[9px] font-mono text-purple-900 select-all font-bold"
                           />
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(academyInviteUrl);
-                              alert("📋 تم نسخ الرابط بنجاح!");
+                              safeCopyToClipboard(academyInviteUrl, "📋 تم نسخ الرابط بنجاح إلى الحافظة!");
                             }}
-                            className="py-1.5 px-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-black shrink-0 transition-colors cursor-pointer"
+                            className="py-1.5 px-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white rounded-lg text-[10px] font-black shrink-0 transition-all cursor-pointer shadow-xs active:scale-95 active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white"
                           >
-                            نسخ
+                            نسخ يدوياً
                           </button>
                         </div>
                       </div>
@@ -2806,21 +3392,40 @@ export default function App() {
                         <span className="text-slate-400 font-bold text-[9.5px]">لا يوجد زملاء منضمون في صفك حالياً.</span>
                       </div>
                     ) : (
-                      <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                      <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
                         {classmates.map((cl, idx) => (
-                          <div key={cl.uid || idx} className="flex items-center justify-between p-2 bg-white border border-slate-100 rounded-xl hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center gap-2">
-                              <div className="w-6.5 h-6.5 rounded-lg bg-pink-100/65 flex items-center justify-center text-[10px] font-black text-pink-700 select-none">
-                                {idx + 1}
+                          <div key={cl.uid || idx} className="flex flex-col p-3 bg-white border border-slate-100 rounded-2xl hover:border-purple-200 transition-all shadow-xs gap-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-xl bg-pink-100 flex items-center justify-center text-[10.5px] font-black text-pink-700 select-none">
+                                  {idx + 1}
+                                </div>
+                                <div className="text-right">
+                                  <h4 className="text-[11.5px] font-extrabold text-slate-800 leading-tight">{cl.name}</h4>
+                                  <span className="text-[9.5px] text-slate-450 block font-bold truncate max-w-[170px]">{cl.email || "بريد غير محدد"}</span>
+                                </div>
                               </div>
-                              <div className="text-right">
-                                <h4 className="text-[11px] font-black text-slate-800 leading-none">{cl.name}</h4>
-                                <span className="text-[9px] text-slate-400 block font-normal mt-1 max-w-[150px] truncate">{cl.email || "بريد غير محدد"}</span>
+                              <span className="text-[9.5px] bg-emerald-50 text-emerald-700 border border-emerald-100/60 px-2 py-0.5 rounded-lg font-extrabold leading-none shrink-0">
+                                منضم في صفي ✓
+                              </span>
+                            </div>
+
+                            {/* Classmate Statistics Details */}
+                            <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-dashed border-slate-100 text-center text-[10px] font-bold text-slate-650">
+                              <div className="bg-slate-50 rounded-xl p-1.5 flex flex-col justify-center">
+                                <span className="text-[9px] text-slate-400 font-extrabold mb-0.5">الفصل الدراسي 📚</span>
+                                <span className="text-purple-900 font-black truncate text-[9.5px]">{cl.studentSemester || "الفصل الدراسي الأول"}</span>
+                              </div>
+                              <div className="bg-slate-50 rounded-xl p-1.5 flex flex-col justify-center">
+                                <span className="text-[9px] text-slate-400 font-extrabold mb-0.5">الكلمات المنجزة 📝</span>
+                                <span className="text-pink-650 font-black text-[10.5px]">{cl.completedWordsCount || 0} كلمة</span>
+                              </div>
+                              <div className="bg-slate-50 rounded-xl p-1.5 flex flex-col justify-center">
+                                {/* NO groups icon/unlock icon here, keeping it completely clean as text as requested */}
+                                <span className="text-[9px] text-slate-400 font-extrabold mb-0.5">مجموع المجموعات</span>
+                                <span className="text-amber-600 font-black text-[10.5px]">{cl.completedGroupsCount || 0} مجموعات</span>
                               </div>
                             </div>
-                            <span className="text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100/60 px-1.5 py-0.5 rounded-lg font-black leading-none">
-                              منضم ✓
-                            </span>
                           </div>
                         ))}
                       </div>
@@ -2855,8 +3460,7 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => {
-                          navigator.clipboard.writeText(auth.currentUser?.uid || "");
-                          alert("📋 تم نسخ الرقم المميز بنجاح!");
+                          safeCopyToClipboard(auth.currentUser?.uid || "", "📋 تم نسخ الرقم المميز بنجاح!");
                         }}
                         className="py-1.5 px-3 bg-purple-650 hover:bg-purple-700 text-white rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center cursor-pointer gap-1 text-xs font-black"
                         title="نسخ الرقم المميز"
@@ -2874,7 +3478,7 @@ export default function App() {
                       setAcademyViewOpen(true);
                       fetchClassmates();
                     }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-150 hover:border-pink-300 bg-pink-50/15 hover:bg-pink-50/40 transition-all text-right cursor-pointer group"
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-150 hover:border-pink-300 bg-pink-50/15 hover:bg-pink-50/40 transition-all text-right cursor-pointer group active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white active:scale-[0.98]"
                   >
                     <div className="w-11 h-11 rounded-xl bg-pink-100 flex items-center justify-center text-pink-700 shrink-0 group-hover:scale-110 transition-transform">
                       <span className="text-xl">🎓</span>
@@ -2891,13 +3495,13 @@ export default function App() {
                       setMainTab("achievements");
                       setShowSettingsModal(false);
                     }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-200 bg-amber-50/20 hover:bg-amber-50/50 transition-all text-right cursor-pointer group"
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-200 bg-amber-50/20 hover:bg-amber-50/50 transition-all text-right cursor-pointer group active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white active:scale-[0.98]"
                   >
                     <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-110 transition-transform">
                       <Trophy className="w-5.5 h-5.5 text-amber-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-black text-amber-950">لوحة الإنجازات والوسام 🏆</h4>
+                      <h4 className="text-sm font-black text-amber-950">الإنجازات 🏆</h4>
                     </div>
                   </button>
 
@@ -2908,7 +3512,7 @@ export default function App() {
                       setMainTab("about");
                       setShowSettingsModal(false);
                     }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-indigo-100 hover:border-indigo-200 bg-indigo-50/20 hover:bg-indigo-50/50 transition-all text-right cursor-pointer group"
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-indigo-100 hover:border-indigo-200 bg-indigo-50/20 hover:bg-indigo-50/50 transition-all text-right cursor-pointer group active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white active:scale-[0.98]"
                   >
                     <div className="w-11 h-11 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-700 shrink-0 group-hover:scale-110 transition-transform">
                       <Compass className="w-5.5 h-5.5 text-indigo-600" />
@@ -2925,7 +3529,7 @@ export default function App() {
                       setMainTab("support");
                       setShowSettingsModal(false);
                     }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-100 hover:border-pink-200 bg-pink-50/20 hover:bg-pink-50/50 transition-all text-right cursor-pointer group"
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-pink-100 hover:border-pink-200 bg-pink-50/20 hover:bg-pink-50/50 transition-all text-right cursor-pointer group active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white active:scale-[0.98]"
                   >
                     <div className="w-11 h-11 rounded-xl bg-pink-100 flex items-center justify-center text-pink-700 shrink-0 group-hover:scale-110 transition-transform">
                       <HelpCircle className="w-5.5 h-5.5 text-pink-600" />
@@ -2934,6 +3538,8 @@ export default function App() {
                       <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
                     </div>
                   </button>
+
+
                 </div>
               </>
             )}
@@ -3112,10 +3718,9 @@ export default function App() {
                       });
                     });
 
-                    alert(`🎉 مبارك! لقد انضممت بنجاح مع زميلك ${classmateName} في صفك الدراسي التفاعلي بأكاديمية StitchLab!`);
+                    // Silent join success, absolutely no alerts
                   } catch (err) {
                     console.error("Error joining classroom:", err);
-                    alert("عذراً، لم نتمكن من إتمام عملية الانضمام بنجاح.");
                   } finally {
                     localStorage.removeItem("stitchlab_academy_invite_id");
                     localStorage.removeItem("stitchlab_academy_inviter_name");
