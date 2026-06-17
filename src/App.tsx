@@ -2749,24 +2749,47 @@ export default function App() {
                   )}
 
                   {(authMode === "signup" || authMode === "login") && (
-                    <div className="flex items-start gap-2 pt-2 pb-1 text-right animate-fadeIn" dir="rtl">
-                      <input
-                        type="checkbox"
-                        id="terms-checkbox"
-                        checked={agreedToTerms}
-                        onChange={(e) => setAgreedToTerms(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 text-purple-600 border-slate-300 rounded-sm focus:ring-purple-400 cursor-pointer"
-                      />
-                      <label htmlFor="terms-checkbox" className="text-[11px] text-slate-655 font-bold select-none cursor-pointer leading-tight">
+                    <div className="flex items-start gap-2.5 pt-2 pb-1 text-right animate-fadeIn" dir="rtl">
+                      <button
+                        type="button"
+                        id="terms-checkbox-custom"
+                        onClick={() => setAgreedToTerms(!agreedToTerms)}
+                        className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all duration-200 cursor-pointer shrink-0 ${
+                          agreedToTerms
+                            ? "bg-purple-600 border-purple-600 text-white shadow-xs"
+                            : "bg-white border-slate-350 hover:border-purple-400"
+                        }`}
+                        aria-checked={agreedToTerms}
+                        role="checkbox"
+                      >
+                        {agreedToTerms && (
+                          <svg
+                            className="w-3.5 h-3.5 font-bold"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            strokeWidth="4"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </button>
+                      <span 
+                        onClick={() => setAgreedToTerms(!agreedToTerms)}
+                        className="text-[11px] text-slate-700 font-bold select-none cursor-pointer leading-tight pt-0.5"
+                      >
                         أوافق على{" "}
                         <button
                           type="button"
-                          onClick={() => setShowTermsModal(true)}
-                          className="text-purple-600 hover:text-pink-500 underline font-black focus:outline-none cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowTermsModal(true);
+                          }}
+                          className="text-purple-600 hover:text-pink-500 underline font-black focus:outline-none cursor-pointer inline"
                         >
                           شروط الاستخدام وسياسة الخصوصية
                         </button>
-                      </label>
+                      </span>
                     </div>
                   )}
 
