@@ -1509,35 +1509,33 @@ export default function HomeWorkspace({
                   return (
                     <div 
                       key={item.key} 
+                      onClick={() => {
+                        if (!isUnlocked) return;
+                        const lvlObj = LEARNING_LEVELS.find(l => l.number === item.level);
+                        if (lvlObj) {
+                          setActiveTrainingLevel(lvlObj);
+                          setActiveTrainingSemester(item.semester);
+                          setActiveTrainingGroup(item.group);
+                          setCurrentWordIndex(0);
+                        }
+                      }}
                       className={`p-3 rounded-2xl border transition-all duration-200 flex items-center justify-between gap-3 ${
-                        isShaking
-                          ? "animate-shake border-red-300 bg-red-50/70"
-                          : isUnlocked 
-                          ? "bg-purple-100/90 border-purple-250 text-purple-950 hover:bg-purple-200/55 hover:border-purple-300" 
-                          : "bg-slate-50/80 border-slate-150"
+                        isUnlocked 
+                          ? "cursor-pointer active:scale-[0.98] hover:bg-purple-200/55 hover:border-purple-300 bg-purple-100/90 border-purple-250 text-purple-950 shadow-xs" 
+                          : "bg-slate-50/80 border-slate-150 text-slate-500"
+                      } ${
+                        isShaking ? "animate-shake border-red-300 bg-red-50/70" : ""
                       }`}
                     >
                       {/* Left Block -> action triggers directly if unlocked or locks display */}
                       <div className="flex items-center gap-2 text-right justify-start w-full">
-                        {isUnlocked ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const lvlObj = LEARNING_LEVELS.find(l => l.number === item.level);
-                              if (lvlObj) {
-                                setActiveTrainingLevel(lvlObj);
-                                setActiveTrainingSemester(item.semester);
-                                setActiveTrainingGroup(item.group);
-                                setCurrentWordIndex(0);
-                              }
-                            }}
-                            className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] py-1.5 px-3.5 rounded-xl transition-all active:scale-95 cursor-pointer shadow-sm shadow-purple-200"
-                          >
-                            تأسيس الكلمة 🚀
-                          </button>
-                        ) : (
-                          <span className="text-slate-400 font-bold text-xs flex items-center gap-1">
+                        {!isUnlocked ? (
+                          <span className="text-slate-400 font-bold text-xs flex items-center gap-1 shrink-0">
                             <Lock className="w-3 h-3 text-slate-400" /> مغلقة
+                          </span>
+                        ) : (
+                          <span className="text-purple-600 font-bold text-[10px] bg-purple-200/60 px-2.5 py-1 rounded-xl shrink-0">
+                            دخول 🚀
                           </span>
                         )}
                         
@@ -1548,11 +1546,11 @@ export default function HomeWorkspace({
                       </div>
 
                       {/* Right side completions info */}
-                      <div className="flex items-center gap-1 text-slate-500 text-[10px] font-bold">
+                      <div className="flex items-center gap-1 text-slate-500 text-[10px] font-bold shrink-0">
                         {isCompleted ? (
                           <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-250">مكتمل ✓</span>
                         ) : isUnlocked ? (
-                          <span className="bg-purple-150 text-purple-800 px-2 py-0.5 rounded-full border border-purple-200">غير مكتمل</span>
+                          <span className="bg-purple-155 text-purple-800 px-2 py-0.5 rounded-full border border-purple-220">غير مكتمل</span>
                         ) : (
                           <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full border border-slate-200">مغلق</span>
                         )}

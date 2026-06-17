@@ -18,7 +18,8 @@ import {
   Sparkles,
   Copy,
   Settings,
-  Cloud
+  Cloud,
+  Pen
 } from "lucide-react";
 import { 
   Persona, 
@@ -247,6 +248,8 @@ export default function App() {
   const [academyInviteUrl, setAcademyInviteUrl] = useState<string>("");
   const [academyInviteImage, setAcademyInviteImage] = useState<string>("");
   const [classmates, setClassmates] = useState<{ uid: string; name: string; email: string; joinedAt: string }[]>([]);
+  const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const [editingNameValue, setEditingNameValue] = useState<string>("");
   const [loadingClassmates, setLoadingClassmates] = useState<boolean>(false);
   const [pendingAcademyInvite, setPendingAcademyInvite] = useState<{ id: string; name: string } | null>(null);
   const [activeAcademyInviteId, setActiveAcademyInviteId] = useState<string | null>(null);
@@ -2857,8 +2860,92 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                     
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
-                      <span className="text-xs font-black">الطالب: {currentUser?.name || "طالب مميز"}</span>
+                      <span className="text-xs font-black flex items-center gap-1.5 justify-end">
+                        <span>الطالب: {currentUser?.name || "طالب مميز"}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingNameValue(currentUser?.name || "طالب مميز");
+                            setIsEditingName(true);
+                          }}
+                          className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
+                          title="تعديل اسم الطالب"
+                        >
+                          <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
+                        </button>
+                      </span>
                     </div>
+
+                    {isEditingName && (
+                      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4" dir="rtl">
+                        <div className="bg-white rounded-[24px] p-6 max-w-sm w-full border border-pink-100 shadow-2xl text-right animate-fadeIn">
+                          <h3 className="text-sm font-black text-slate-800 mb-2">تعديل اسم الطالب ✏️</h3>
+                          <div className="text-[11px] text-rose-600 font-bold mb-4 flex items-start gap-2 bg-rose-50 p-3 rounded-xl leading-relaxed border border-rose-100/65">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
+                            <span>تأكد من كتابة اسمك لأنه لا تستطيع تغيير اسمك بعد ذلك! ⚠️</span>
+                          </div>
+                          <input
+                            type="text"
+                            value={editingNameValue}
+                            onChange={(e) => setEditingNameValue(e.target.value)}
+                            placeholder="اكتب اسمك الكامل هنا..."
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-purple-500 focus:outline-hidden text-right font-bold bg-slate-50/50"
+                            maxLength={40}
+                            autoFocus
+                          />
+                          <div className="flex gap-2 justify-end mt-4">
+                            <button
+                              type="button"
+                              onClick={() => setIsEditingName(false)}
+                              className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-all cursor-pointer"
+                            >
+                              إلغاء
+                            </button>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const trimmed = editingNameValue.trim();
+                                if (!trimmed || trimmed === "طالب مميز") {
+                                  alert("⚠️ يرجى إدخال اسم صحيح غير الاسم الافتراضي!");
+                                  return;
+                                }
+                                
+                                // Keep UI updated
+                                setCurrentUser(prev => prev ? { ...prev, name: trimmed } : { name: trimmed, email: "", level: "Intermediate" });
+
+                                // Persist in LocalStorage & Firestore
+                                if (isLoggedIn && auth.currentUser) {
+                                  try {
+                                    const uid = auth.currentUser.uid;
+                                    const docRef = doc(db, "students", uid);
+                                    await setDoc(docRef, {
+                                      name: trimmed,
+                                      updatedAt: new Date().toISOString()
+                                    }, { merge: true });
+                                    
+                                    // Update cached payload
+                                    const userProgressKey = `stitchlab_student_${uid}_progress`;
+                                    const savedProgressStr = localStorage.getItem(userProgressKey);
+                                    if (savedProgressStr) {
+                                      const parsed = JSON.parse(savedProgressStr);
+                                      parsed.name = trimmed;
+                                      localStorage.setItem(userProgressKey, JSON.stringify(parsed));
+                                    }
+                                  } catch (err) {
+                                    console.error("Cloud name update failed:", err);
+                                  }
+                                }
+
+                                setIsEditingName(false);
+                              }}
+                              className="px-4 py-2 rounded-xl text-xs font-black text-white bg-gradient-to-r from-purple-600 to-pink-500 hover:opacity-95 transition-opacity cursor-pointer shadow-xs"
+                            >
+                              حفظ الاسم
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <button
                       type="button"
@@ -3232,7 +3319,7 @@ export default function App() {
               </nav>
 
               {/* Educational Learning Stopwatch Timer */}
-              <LearningTimer isLoggedIn={isLoggedIn} />
+              <LearningTimer isLoggedIn={isLoggedIn} uid={auth.currentUser?.uid} />
             </>
 
         </div>

@@ -3,29 +3,31 @@ import { Timer, ChevronRight } from "lucide-react";
 
 interface LearningTimerProps {
   isLoggedIn: boolean;
+  uid?: string;
 }
 
-export default function LearningTimer({ isLoggedIn }: LearningTimerProps) {
+export default function LearningTimer({ isLoggedIn, uid }: LearningTimerProps) {
   const [seconds, setSeconds] = useState<number>(0);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [isPageVisible, setIsPageVisible] = useState<boolean>(!document.hidden);
 
-  // Sync internal state when isLoggedIn changes or on mount
+  // Sync internal state when isLoggedIn/uid changes or on mount
   useEffect(() => {
-    if (isLoggedIn) {
-      const savedTime = localStorage.getItem("stitchlab_learning_timer_seconds");
+    if (isLoggedIn && uid) {
+      const storageKey = `stitchlab_learning_seconds_${uid}`;
+      const savedTime = localStorage.getItem(storageKey);
       if (savedTime) {
         setSeconds(parseInt(savedTime, 10));
       } else {
         // First login: starts at 0
         setSeconds(0);
-        localStorage.setItem("stitchlab_learning_timer_seconds", "0");
+        localStorage.setItem(storageKey, "0");
       }
     } else {
       // Stopped/reset if not logged in
       setSeconds(0);
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, uid]);
 
   // Handle visibility changes to stop timer when minimized/hidden/tab switched ("عند اغلاق البرنامج اجعله يتوقف")
   useEffect(() => {
@@ -40,24 +42,33 @@ export default function LearningTimer({ isLoggedIn }: LearningTimerProps) {
       setIsPageVisible(false);
     };
     
+    // Listen to focus and blur of window to stop/resume precisely
+    const handleWindowFocus = () => setIsPageVisible(true);
+    const handleWindowBlur = () => setIsPageVisible(false);
+
     window.addEventListener("beforeunload", handleUnloadAndStop);
     window.addEventListener("pagehide", handleUnloadAndStop);
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("blur", handleWindowBlur);
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("beforeunload", handleUnloadAndStop);
       window.removeEventListener("pagehide", handleUnloadAndStop);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("blur", handleWindowBlur);
     };
   }, []);
 
   // Update timer every second only if student is logged in AND page is active/visible
   useEffect(() => {
     let interval: any = null;
-    if (isLoggedIn && isPageVisible) {
+    if (isLoggedIn && uid && isPageVisible) {
       interval = setInterval(() => {
         setSeconds((prev) => {
           const next = prev + 1;
-          localStorage.setItem("stitchlab_learning_timer_seconds", next.toString());
+          const storageKey = `stitchlab_learning_seconds_${uid}`;
+          localStorage.setItem(storageKey, next.toString());
           return next;
         });
       }, 1000);
@@ -67,7 +78,7 @@ export default function LearningTimer({ isLoggedIn }: LearningTimerProps) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isLoggedIn, isPageVisible]);
+  }, [isLoggedIn, uid, isPageVisible]);
 
   // Format time as HH:MM:SS
   const formatTime = (totalSecs: number): string => {
