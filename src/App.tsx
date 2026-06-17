@@ -260,6 +260,7 @@ export default function App() {
   const [academyInviteImage, setAcademyInviteImage] = useState<string>("");
   const [classmates, setClassmates] = useState<{ uid: string; name: string; email: string; joinedAt: string }[]>([]);
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const [showNameEditLockHint, setShowNameEditLockHint] = useState<boolean>(false);
   const [editingNameValue, setEditingNameValue] = useState<string>("");
   const [loadingClassmates, setLoadingClassmates] = useState<boolean>(false);
   const [pendingAcademyInvite, setPendingAcademyInvite] = useState<{ id: string; name: string } | null>(null);
@@ -2972,35 +2973,53 @@ export default function App() {
 
                   <div className="flex flex-wrap items-center gap-3 sm:gap-4">
                     
-                    <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
-                      <span className="text-xs font-black flex items-center gap-1.5 justify-end">
-                        <span>الطالب: {currentUser?.name || "طالب مميز"}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (currentUser?.lastNameChangedAt) {
-                              const lastChangeDate = new Date(currentUser.lastNameChangedAt);
-                              if (!isNaN(lastChangeDate.getTime())) {
-                                const now = new Date();
-                                const diffTime = now.getTime() - lastChangeDate.getTime();
-                                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-                                if (diffDays < 60) {
-                                  const daysLeft = 60 - diffDays;
-                                  alert(`⚠️ عذراً! لا يمكنك تعديل الاسم مجدداً إلا بعد مرور 60 يوماً من التعديل الأخير. متبقي ${daysLeft} يوم.`);
+                    {(() => {
+                      let nameChangeDaysRemaining = 0;
+                      if (currentUser?.lastNameChangedAt) {
+                        const lastChangeDate = new Date(currentUser.lastNameChangedAt);
+                        if (!isNaN(lastChangeDate.getTime())) {
+                          const now = new Date();
+                          const diffTime = now.getTime() - lastChangeDate.getTime();
+                          const diffDays = diffTime / (1000 * 60 * 60 * 24);
+                          if (diffDays < 60) {
+                            nameChangeDaysRemaining = Math.ceil(60 - diffDays);
+                          }
+                        }
+                      }
+                      return (
+                        <div className="flex flex-col items-start sm:items-end text-slate-700 gap-1" id="student-profile-text-container">
+                          <span className="text-xs font-black flex items-center gap-1.5 justify-end">
+                            <span>الطالب: {currentUser?.name || "طالب مميز"}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (nameChangeDaysRemaining > 0) {
                                   return;
                                 }
-                              }
-                            }
-                            setEditingNameValue(currentUser?.name || "طالب مميز");
-                            setIsEditingName(true);
-                          }}
-                          className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
-                          title="تعديل اسم الطالب"
-                        >
-                          <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
-                        </button>
-                      </span>
-                    </div>
+                                setEditingNameValue(currentUser?.name || "طالب مميز");
+                                setIsEditingName(true);
+                              }}
+                              className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
+                              title={nameChangeDaysRemaining > 0 ? `تعديل الاسم مقفل مؤقتاً (متبقي ${nameChangeDaysRemaining} يوم)` : "تعديل اسم الطالب"}
+                            >
+                              {nameChangeDaysRemaining > 0 ? (
+                                <Lock className="w-3.5 h-3.5 text-amber-500" />
+                              ) : (
+                                <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
+                              )}
+                            </button>
+                          </span>
+
+                          {/* Beautiful status remaining days indicator */}
+                          {nameChangeDaysRemaining > 0 && (
+                            <div className="text-[10px] font-sans font-extrabold text-amber-700 bg-amber-50 border border-amber-200/60 px-2.5 py-1 rounded-xl flex items-center gap-1.5 shadow-xs animate-fadeIn leading-none select-none">
+                              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
+                              <span>تعديل الاسم متاح بعد {nameChangeDaysRemaining} يوم</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {isEditingName && (
                       <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center pt-[15vh] z-50 p-4 overflow-y-auto" dir="rtl">
