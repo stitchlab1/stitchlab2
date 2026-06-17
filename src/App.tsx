@@ -1487,7 +1487,6 @@ export default function App() {
     e.preventDefault();
     if (!agreedToTerms) {
       setAuthError("يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
-      alert("⚠️ يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
       return;
     }
     if (!email || !password) {
@@ -1528,7 +1527,6 @@ export default function App() {
     e.preventDefault();
     if (!agreedToTerms) {
       setAuthError("يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
-      alert("⚠️ يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
       return;
     }
     if (!email || !password) {
@@ -1633,7 +1631,6 @@ export default function App() {
   const handleGoogleSignIn = async () => {
     if (!agreedToTerms) {
       setAuthError("يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
-      alert("⚠️ يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
       return;
     }
     setAuthError("");
