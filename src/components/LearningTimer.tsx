@@ -8,19 +8,52 @@ interface LearningTimerProps {
 export default function LearningTimer({ isLoggedIn }: LearningTimerProps) {
   const [seconds, setSeconds] = useState<number>(0);
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
+  const [isPageVisible, setIsPageVisible] = useState<boolean>(!document.hidden);
 
-  // Load initial value from localStorage if it exists, or start fresh
+  // Sync internal state when isLoggedIn changes or on mount
   useEffect(() => {
-    const savedTime = localStorage.getItem("stitchlab_learning_timer_seconds");
-    if (savedTime) {
-      setSeconds(parseInt(savedTime, 10));
+    if (isLoggedIn) {
+      const savedTime = localStorage.getItem("stitchlab_learning_timer_seconds");
+      if (savedTime) {
+        setSeconds(parseInt(savedTime, 10));
+      } else {
+        // First login: starts at 0
+        setSeconds(0);
+        localStorage.setItem("stitchlab_learning_timer_seconds", "0");
+      }
+    } else {
+      // Stopped/reset if not logged in
+      setSeconds(0);
     }
+  }, [isLoggedIn]);
+
+  // Handle visibility changes to stop timer when minimized/hidden/tab switched ("عند اغلاق البرنامج اجعله يتوقف")
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      setIsPageVisible(!document.hidden);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    // Also listen to window unload/pagehide to stop the timer and ensure it persists the correct time
+    const handleUnloadAndStop = () => {
+      setIsPageVisible(false);
+    };
+    
+    window.addEventListener("beforeunload", handleUnloadAndStop);
+    window.addEventListener("pagehide", handleUnloadAndStop);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("beforeunload", handleUnloadAndStop);
+      window.removeEventListener("pagehide", handleUnloadAndStop);
+    };
   }, []);
 
-  // Update timer every second only if student is logged in
+  // Update timer every second only if student is logged in AND page is active/visible
   useEffect(() => {
     let interval: any = null;
-    if (isLoggedIn) {
+    if (isLoggedIn && isPageVisible) {
       interval = setInterval(() => {
         setSeconds((prev) => {
           const next = prev + 1;
@@ -29,10 +62,12 @@ export default function LearningTimer({ isLoggedIn }: LearningTimerProps) {
         });
       }, 1000);
     } else {
-      clearInterval(interval);
+      if (interval) clearInterval(interval);
     }
-    return () => clearInterval(interval);
-  }, [isLoggedIn]);
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isLoggedIn, isPageVisible]);
 
   // Format time as HH:MM:SS
   const formatTime = (totalSecs: number): string => {

@@ -408,18 +408,12 @@ export default function App() {
       
       setAcademyInviteUrl(link);
 
-      if (!driveToken) {
-        alert("🔮 تم إنشاء رابط دعوتك بنجاح! \n\nيمكنك الآن نسخه يدوياً بكل سهولة من المربع الذي ظهر بالأسفل لمشاركتها مع زملائك.\n\n🔒 تلميح: عند ربط حسابك بـ Google Drive، سيقوم التطبيق برفع لقطة الشاشة تلقائياً لتظهر للمستلم في بطاقة معاينة تطبيقات التواصل (WhatsApp، Telegram إلخ) بشكل احترافي!");
-      } else {
-        alert("🔮 تم التقاط لقطة الشاشة ورفعها بنجاح إلى Google Drive لإنشاء بطاقة معاينة مذهلة! \n\nلقد تم إنشاء رابط الدعوة الذكي، يرجى نسخه باستخدام زر 'نسخ يدوياً' بالأسفل.");
-      }
-
+      // No alerts shown as requested
     } catch (err) {
       console.error("StitchLab Academy snapshot failed:", err);
       // Fallback
       const link = `${window.location.origin}/?academyInvite=${uid}&inviterName=${encodeURIComponent(studentName)}`;
       setAcademyInviteUrl(link);
-      alert("🔮 تم إنشاء رابط الدعوة الافتراضي! يرجى نسخه يدوياً من المربع بالأسفل.");
     } finally {
       setIsGeneratingAcademyInvite(false);
     }
@@ -738,6 +732,7 @@ export default function App() {
           setUnlockedLevel(progress.unlockedLevel || 1);
           setCompletedLevels(progress.completedLevels || []);
           setCompletedGroups(progress.completedGroups || []);
+          setUnlockedAdvertiserGroups(progress.unlockedAdvertiserGroups || []);
           setCustomFlashcards(progress.customFlashcards || []);
           setConversationsHad(progress.conversationsHad || 0);
           setQuizScore(progress.quizScore || 0);
@@ -777,6 +772,7 @@ export default function App() {
             unlockedLevel: localUnlockedLevel,
             completedLevels: localCompletedLevels,
             completedGroups: localCompletedGroups,
+            unlockedAdvertiserGroups: JSON.parse(localStorage.getItem("stitchlab_unlocked_ad_groups") || "[]"),
             customFlashcards: localCustomFlashcards,
             conversationsHad: localConversationsHad,
             quizScore: localQuizScore,
@@ -1216,6 +1212,9 @@ export default function App() {
         if (data.completedGroups !== undefined) {
           setCompletedGroups(prev => JSON.stringify(prev) !== JSON.stringify(data.completedGroups) ? data.completedGroups : prev);
         }
+        if (data.unlockedAdvertiserGroups !== undefined) {
+          setUnlockedAdvertiserGroups(prev => JSON.stringify(prev) !== JSON.stringify(data.unlockedAdvertiserGroups) ? data.unlockedAdvertiserGroups : prev);
+        }
         if (data.level !== undefined) {
           setUserLevel(prev => prev !== data.level ? data.level : prev);
         }
@@ -1238,6 +1237,7 @@ export default function App() {
           quizAttempts: quizAttempts,
           quizScore: quizScore,
           completedGroups: completedGroups,
+          unlockedAdvertiserGroups: unlockedAdvertiserGroups,
           level: userLevel,
           studentSemester: studentSemester,
           analyzedCount: analyzedCount,
@@ -1273,6 +1273,7 @@ export default function App() {
           quizAttempts: quizAttempts,
           quizScore: quizScore,
           completedGroups: completedGroups,
+          unlockedAdvertiserGroups: unlockedAdvertiserGroups,
           level: userLevel,
           studentSemester: studentSemester,
           analyzedCount: analyzedCount,
@@ -1294,6 +1295,7 @@ export default function App() {
     quizAttempts,
     quizScore,
     completedGroups,
+    unlockedAdvertiserGroups,
     userLevel,
     studentSemester,
     analyzedCount,
@@ -1319,7 +1321,7 @@ export default function App() {
                     ...item,
                     studentSemester: studentData.studentSemester || "الفصل الدراسي الأول",
                     completedWordsCount: studentData.completedWordsCount || 0,
-                    completedGroupsCount: (studentData.completedGroups || []).length || 0,
+                    completedGroupsCount: (studentData.unlockedAdvertiserGroups || studentData.completedGroups || []).length || 0,
                   }
                 : item
             )
@@ -1691,6 +1693,7 @@ export default function App() {
       localStorage.removeItem("stitchlab_unlocked_level");
       localStorage.removeItem("stitchlab_completed_levels");
       localStorage.removeItem("stitchlab_analyzed_count");
+      localStorage.removeItem("stitchlab_learning_timer_seconds");
       setHasUnsavedChanges(false);
     } catch (e) {
       console.error("Sign out fail:", e);
@@ -1859,6 +1862,7 @@ export default function App() {
           unlockedLevel: finalUnlockedLevel,
           completedLevels: finalCompletedLevels,
           completedGroups: finalCompletedGroups,
+          unlockedAdvertiserGroups: unlockedAdvertiserGroups,
           customFlashcards: customFlashcards,
           conversationsHad: conversationsHad,
           quizScore: quizScore,
@@ -2973,7 +2977,13 @@ export default function App() {
                     setCompletedWordsCount={setCompletedWordsCount}
                     studentSemester={studentSemester}
                     onUnlockGroup={(gKey) => {
-                      const nextGroups = [...unlockedAdvertiserGroups, gKey];
+                      const prevTotal = unlockedAdvertiserGroups.length;
+                      let nextGroups: string[];
+                      if (prevTotal === 0) {
+                        nextGroups = [gKey]; // if first group, set/put 1 in it
+                      } else {
+                        nextGroups = [...unlockedAdvertiserGroups, gKey]; // previous total + 1
+                      }
                       setUnlockedAdvertiserGroups(nextGroups);
                       try {
                         localStorage.setItem("stitchlab_unlocked_ad_groups", JSON.stringify(nextGroups));
@@ -3506,7 +3516,7 @@ export default function App() {
                             }}
                             className="py-1.5 px-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white rounded-lg text-[10px] font-black shrink-0 transition-all cursor-pointer shadow-xs active:scale-95 active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white"
                           >
-                            نسخ يدوياً
+                            (نسخ)
                           </button>
                         </div>
                       </div>
@@ -3684,82 +3694,6 @@ export default function App() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
-                    </div>
-                  </button>
-
-                  {/* Option 5: Reset completed groups to zero */}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const confirmReset = window.confirm("هل أنت متأكد من تصفير مجموع المجموعات بالكامل؟ سيتم إعادة تعيين تقدمك في المجموعات إلى الصفر. ⚠️");
-                      if (confirmReset) {
-                        setCompletedGroups([]);
-                        setUnlockedAdvertiserGroups([]);
-                        localStorage.setItem("stitchlab_completed_groups", JSON.stringify([]));
-                        localStorage.setItem("stitchlab_unlocked_ad_groups", JSON.stringify([]));
-                        if (isLoggedIn && auth.currentUser) {
-                          try {
-                            const uid = auth.currentUser.uid;
-                            const docRef = doc(db, "students", uid);
-                            await setDoc(docRef, {
-                              completedGroups: [],
-                              updatedAt: new Date().toISOString()
-                            }, { merge: true });
-                            alert("✨ تم تصفير مجموع المجموعات بنجاح في السحابة وجهازك!");
-                          } catch (err) {
-                            console.error("Error resetting completed groups in cloud:", err);
-                            alert("✨ تم تصفير المجموعات محلياً بنجاح. سيتم المزامنة السحابية تلقائياً لاحقاً.");
-                          }
-                        } else {
-                          alert("✨ تم تصفير مجموع المجموعات محلياً بنجاح!");
-                        }
-                      }
-                    }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-rose-100 hover:border-rose-250 bg-rose-50/15 hover:bg-rose-50/30 transition-all text-right cursor-pointer group active:scale-[0.98]"
-                  >
-                    <div className="w-11 h-11 rounded-xl bg-rose-100 flex items-center justify-center text-rose-700 shrink-0 group-hover:scale-110 transition-transform">
-                      <Trash2 className="w-5.5 h-5.5 text-rose-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-black text-rose-950">تصفير ومسح مجموع المجموعات 🔄🧹</h4>
-                      <p className="text-[10px] text-zinc-405 font-bold mt-0.5">إعادة ضبط جميع إنجازات ومؤشرات المجموعات إلى الصفر والبدء من جديد</p>
-                    </div>
-                  </button>
-
-                  {/* Option 6: Reset completed words to zero */}
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const confirmReset = window.confirm("هل أنت متأكد من تصفير الكلمات المنجزة بالكامل؟ سيتم إعادة تعيين تقدم كلمتك المنجزة إلى الصفر. ⚠️");
-                      if (confirmReset) {
-                        setCompletedWordsCount(0);
-                        localStorage.setItem("stitchlab_completed_words_count", "0");
-                        if (isLoggedIn && auth.currentUser) {
-                          try {
-                            const uid = auth.currentUser.uid;
-                            const docRef = doc(db, "students", uid);
-                            await setDoc(docRef, {
-                              completedWordsCount: 0,
-                              updatedAt: new Date().toISOString()
-                            }, { merge: true });
-                            alert("✨ تم تصفير عدد الكلمات المنجزة بنجاح في السحابة وجهازك!");
-                          } catch (err) {
-                            console.error("Error resetting completed words in cloud:", err);
-                            alert("✨ تم تصفير الكلمات المنجزة محلياً بنجاح. سيتم المزامنة السحابية تلقائياً لاحقاً.");
-                          }
-                        } else {
-                          alert("✨ تم تصفير الكلمات المنجزة محلياً بنجاح!");
-                        }
-                      }
-                    }}
-                    className="w-full flex items-center gap-4 p-4 rounded-2xl border border-amber-100 hover:border-amber-250 bg-amber-50/15 hover:bg-amber-50/30 transition-all text-right cursor-pointer group active:scale-[0.98]"
-                  >
-                    <div className="w-11 h-11 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 shrink-0 group-hover:scale-110 transition-transform">
-                      <BookOpen className="w-5.5 h-5.5 text-amber-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-black text-amber-950">تصفير الكلمات المنجزة 🔄📖</h4>
-                      <p className="text-[10px] text-zinc-405 font-bold mt-0.5">إعادة ضبط جميع الكلمات المنجزة والبدء في بناء حصيلتك اللغوية من جديد</p>
                     </div>
                   </button>
 
