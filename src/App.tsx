@@ -204,6 +204,8 @@ export default function App() {
   const [authError, setAuthError] = useState<string>("");
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string>("");
   const [authLoading, setAuthLoading] = useState<boolean>(false);
+  const [agreedToTerms, setAgreedToTerms] = useState<boolean>(false);
+  const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
 
   // Firestore & Gamification states
   const [points, setPoints] = useState<number>(() => {
@@ -1483,6 +1485,11 @@ export default function App() {
   // Handle email login & registration
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!agreedToTerms) {
+      setAuthError("يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
+      alert("⚠️ يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
+      return;
+    }
     if (!email || !password) {
       setAuthError("يرجى إدخال البريد الإلكتروني وكلمة المرور.");
       return;
@@ -1519,6 +1526,11 @@ export default function App() {
 
   const handleEmailSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!agreedToTerms) {
+      setAuthError("يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
+      alert("⚠️ يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
+      return;
+    }
     if (!email || !password) {
       setAuthError("يرجى ملء جميع الحقول المطلوبة (البريد، كلمة المرور).");
       return;
@@ -1619,6 +1631,11 @@ export default function App() {
 
   // Auth: handle Google Sign-In via Firebase Popup
   const handleGoogleSignIn = async () => {
+    if (!agreedToTerms) {
+      setAuthError("يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
+      alert("⚠️ يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية للمتابعة وإكمال عملية التسجيل.");
+      return;
+    }
     setAuthError("");
     setAuthLoading(true);
     try {
@@ -2731,6 +2748,28 @@ export default function App() {
                     </div>
                   )}
 
+                  {(authMode === "signup" || authMode === "login") && (
+                    <div className="flex items-start gap-2 pt-2 pb-1 text-right animate-fadeIn" dir="rtl">
+                      <input
+                        type="checkbox"
+                        id="terms-checkbox"
+                        checked={agreedToTerms}
+                        onChange={(e) => setAgreedToTerms(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 text-purple-600 border-slate-300 rounded-sm focus:ring-purple-400 cursor-pointer"
+                      />
+                      <label htmlFor="terms-checkbox" className="text-[11px] text-slate-655 font-bold select-none cursor-pointer leading-tight">
+                        أوافق على{" "}
+                        <button
+                          type="button"
+                          onClick={() => setShowTermsModal(true)}
+                          className="text-purple-600 hover:text-pink-500 underline font-black focus:outline-none cursor-pointer"
+                        >
+                          شروط الاستخدام وسياسة الخصوصية
+                        </button>
+                      </label>
+                    </div>
+                  )}
+
                   <button
                     type="submit"
                     disabled={authLoading}
@@ -2816,14 +2855,19 @@ export default function App() {
               </button>
 
               <div className="pt-1 flex justify-center items-center">
-                <span className="text-[10px] text-slate-400 font-bold bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
-                  تشفير آمن بنسبة 100% 🔒
-                </span>
               </div>
             </div>
 
             <p className="text-[11px] text-center text-slate-500 font-bold font-sans">
-              يتم تشفير وحفظ تقدّمك بكافة الأجهزة تلقائيًا عبر حسابك على Google.
+              بالتسجيل في التطبيق، أنت توافق على{" "}
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(true)}
+                className="text-purple-600 hover:text-pink-500 underline font-black focus:outline-none cursor-pointer"
+              >
+                شروط الاستخدام وسياسة الخصوصية
+              </button>
+              .
             </p>
           </div>
         </div>
@@ -2862,17 +2906,19 @@ export default function App() {
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
                       <span className="text-xs font-black flex items-center gap-1.5 justify-end">
                         <span>الطالب: {currentUser?.name || "طالب مميز"}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingNameValue(currentUser?.name || "طالب مميز");
-                            setIsEditingName(true);
-                          }}
-                          className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
-                          title="تعديل اسم الطالب"
-                        >
-                          <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
-                        </button>
+                        {(!currentUser?.name || currentUser.name === "طالب مميز" || currentUser.name.includes("StitchLab") || currentUser.name.trim() === "") && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingNameValue(currentUser?.name || "طالب مميز");
+                              setIsEditingName(true);
+                            }}
+                            className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
+                            title="تعديل اسم الطالب"
+                          >
+                            <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
+                          </button>
+                        )}
                       </span>
                     </div>
 
@@ -3992,6 +4038,53 @@ export default function App() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* 📜 STITCHLAB Terms & Conditions and Privacy Policy Overlay Modal */}
+      {showTermsModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center pt-[10vh] z-[100] p-4 overflow-y-auto" dir="rtl">
+          <div className="bg-white rounded-[24px] p-6 max-w-lg w-full border border-purple-100 shadow-2xl text-right animate-fadeIn my-8">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+              <h3 className="text-sm font-black text-slate-850">شروط الاستخدام وسياسة الخصوصية 📜</h3>
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-4 text-xs text-slate-600 leading-relaxed overflow-y-auto max-h-[60vh] pr-1">
+              {/* Terms of Service */}
+              <div>
+                <h4 className="font-extrabold text-purple-950 text-xs mb-1">شروط الخدمة (Terms of Service)</h4>
+                <p className="font-semibold text-slate-500 mb-2 leading-relaxed">بمواصلتك استخدام تطبيق StitchLab، أنت تقر وتوافق على الشروط التالية:</p>
+                <ul className="list-disc list-inside space-y-1.5 pl-2 font-medium">
+                  <li><strong className="font-bold text-slate-700">طبيعة الخدمة:</strong> StitchLab هو تطبيق تعليمي مخصص لمساعدة الطلاب على تنظيم كلماتهم ومعلوماتهم الدراسية.</li>
+                  <li><strong className="font-bold text-slate-700">حفظ البيانات:</strong> يعتمد التطبيق على حسابك الشخصي في Google Drive لتخزين بياناتك في مجلد مخصص باسم 'StitchLab_Data'. أنت المسؤول الوحيد عن إدارة هذا المجلد ومحتوياته.</li>
+                  <li><strong className="font-bold text-slate-700">إخلاء المسؤولية:</strong> يتم توفير التطبيق "كما هو" (As-Is). نحن لا نتحمل المسؤولية عن أي فقدان للبيانات ناتج عن حذف المستخدم للملفات من Google Drive أو أي سوء استخدام للحساب.</li>
+                  <li><strong className="font-bold text-slate-700">التعديلات:</strong> نحتفظ بالحق في تعديل هذه الشروط أو تحديث ميزات التطبيق في أي وقت. استمرارك في استخدام التطبيق يعني قبولك لأي تعديلات جديدة.</li>
+                  <li><strong className="font-bold text-slate-700">التواصل:</strong> لأي استفسار أو ملاحظة، يمكنك التواصل معنا عبر <a href="https://www.facebook.com/StitchLab2027" target="_blank" rel="noopener noreferrer" className="text-purple-650 hover:text-pink-600 underline font-extrabold cursor-pointer">صفحتنا على فيسبوك</a>.</li>
+                </ul>
+              </div>
+
+              <hr className="border-slate-100" />
+
+              {/* Privacy Policy */}
+              <div>
+                <h4 className="font-extrabold text-purple-950 text-xs mb-1">سياسة الخصوصية لتطبيق StitchLab</h4>
+                <p className="font-semibold text-slate-500 mb-2 leading-relaxed">نلتزم في تطبيق StitchLab بحماية خصوصيتك. نحن نستخدم Google Drive API حصرياً لحفظ تقدمك التعليمي in مجلد خاص يُسمى 'StitchLab_Data' داخل حسابك الشخصي في Google Drive.</p>
+                <ul className="list-disc list-inside space-y-1 text-slate-500 pl-2 font-medium">
+                  <li>• لا نصل إلى أي ملفات أخرى في حسابك.</li>
+                  <li>• لا نشارك بياناتك مع أي أطراف ثالثة.</li>
+                  <li>• لا نبيع أي معلومات.</li>
+                  <li>• عند تسجيل الدخول، نطلب إذن الوصول فقط للمجلد المخصص للتطبيق لضمان مزامنة تقدمك التعليمي بشكل آمن.</li>
+                </ul>
+              </div>
+            </div>
           </div>
         </div>
       )}
