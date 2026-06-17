@@ -1683,30 +1683,51 @@ export default function HomeWorkspace({
               <button
                 type="button"
                 onClick={async () => {
+                  const encouragingText = `🔥 لقد تحديتك في StitchLab! انضم إليّ الآن لنتعلم معاً ونرى من يتجاوز مراحل أكثر ويحصد المركز الأول! 🏆✨\n\nالموقع الرسمي للتطبيق:\nhttps://stitchlab2.vercel.app/\n\nرابط مبارزتي المباشرة:\n${shareUrl}`;
+
                   try {
                     if (navigator.share) {
-                      const response = await fetch(generatedImage);
-                      const blob = await response.blob();
-                      const file = new File([blob], "stitchlab_challenge.png", { type: "image/png" });
-                      
-                      await navigator.share({
-                        files: [file],
-                        title: "تحدي StitchLab التعليمي",
-                        text: "أنا اتعلم في stitchlab هل تريد ان تكون صديقي في الدراسة",
-                        url: shareUrl
-                      });
+                      let fileToShare: File | null = null;
+                      try {
+                        const response = await fetch(generatedImage);
+                        const blob = await response.blob();
+                        fileToShare = new File([blob], "stitchlab_challenge.png", { type: "image/png" });
+                      } catch (errFile) {
+                        console.warn("Could not prepare file for sharing:", errFile);
+                      }
+
+                      // Attempt sharing with file if supported
+                      if (fileToShare && navigator.canShare && navigator.canShare({ files: [fileToShare] })) {
+                        await navigator.share({
+                          files: [fileToShare],
+                          title: "تحدي StitchLab التعليمي ⚔️",
+                          text: encouragingText
+                        });
+                      } else {
+                        await navigator.share({
+                          title: "تحدي StitchLab التعليمي ⚔️",
+                          text: encouragingText,
+                          url: "https://stitchlab2.vercel.app/"
+                        });
+                      }
                       return;
                     }
                   } catch (e) {
-                    console.warn(e);
+                    console.warn("Native share failed, attempting fallback:", e);
                   }
 
-                  // Default Fallback: COPY LINK to clipboard
+                  // Default Fallback: Open WhatsApp with the pre-filled encouraging text
                   try {
-                    await navigator.clipboard.writeText(shareUrl);
-                    alert("📋 تم نسخ رابط تحدي StitchLab المباشر الخاص بك بنجاح! شاركه الآن مع أصدقائك عبر أي تطبيق محادثة. 💬✨");
-                  } catch (err) {
-                    alert(`احصل على رابط التحدي الخاص بك:\n${shareUrl}`);
+                    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(encouragingText)}`;
+                    window.open(waUrl, "_blank", "noopener,noreferrer");
+                  } catch (fallbackErr) {
+                    // Final backup: copy share URL to clipboard
+                    try {
+                      await navigator.clipboard.writeText(shareUrl);
+                      alert("📋 تم نسخ رابط تحدي StitchLab المباشر بنجاح! شاركه الآن مع أصدقائك عبر أي تطبيق محادثة. 💬✨");
+                    } catch (err) {
+                      alert(`احصل على رابط التحدي الخاص بك:\n${shareUrl}`);
+                    }
                   }
                 }}
                 className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-black py-3 px-4 rounded-xl cursor-pointer shadow-md transition-colors text-center font-sans"
