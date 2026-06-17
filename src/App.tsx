@@ -200,7 +200,7 @@ export default function App() {
     if (typeof window === "undefined") return "Intermediate";
     return (localStorage.getItem("stitchlab_user_level") as any) || "Intermediate";
   });
-  const [currentUser, setCurrentUser] = useState<{ name: string; email: string; level: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ name: string; email: string; level: string; lastNameChangedAt?: string } | null>(null);
   const [authError, setAuthError] = useState<string>("");
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string>("");
   const [authLoading, setAuthLoading] = useState<boolean>(false);
@@ -749,7 +749,8 @@ export default function App() {
           setCurrentUser({
             name: progress.name || firebaseUser.displayName || "طالب مميز",
             email: firebaseUser.email || "",
-            level: progress.level || "Intermediate"
+            level: progress.level || "Intermediate",
+            lastNameChangedAt: progress.lastNameChangedAt || ""
           });
           console.log("Progress restored successfully.");
           console.log(`[StitchLab Debug] تم استعادة التقدم بنجاح للطالب المسجل. النقاط: ${progress.points || 0}، المستوى: ${progress.level || "Intermediate"}، الكلمات: ${progress.completedWordsCount || 0}`);
@@ -806,7 +807,8 @@ export default function App() {
           setCurrentUser({
             name: payload.name,
             email: payload.email,
-            level: localUserLevel
+            level: localUserLevel,
+            lastNameChangedAt: ""
           });
           console.log("Progress restored successfully.");
           console.log(`[StitchLab Debug] تم استعادة التقدم بنجاح (ربط تقدم الزائر بالرئيسي). النقاط: ${localPoints}، المستوى: ${localUserLevel}، الكلمات: ${localCompletedWordsCount}`);
@@ -850,6 +852,19 @@ export default function App() {
         setCompletedWordsCount(localCompletedWordsCount);
         setStudentSemester(localStudentSemester);
         
+        const guestName = localStorage.getItem("stitchlab_guest_name");
+        const guestLastNameChangedAt = localStorage.getItem("stitchlab_guest_lastNameChangedAt");
+        if (guestName) {
+          setCurrentUser({
+            name: guestName,
+            email: "",
+            level: localUserLevel,
+            lastNameChangedAt: guestLastNameChangedAt || ""
+          });
+        } else {
+          setCurrentUser(null);
+        }
+
         setIsDataLoaded(true);
         setAuthLoading(false);
         console.log("Progress restored successfully.");
@@ -1200,6 +1215,28 @@ export default function App() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         console.log("[StitchLab Cloud Sync] Live data received from Firestore:", data);
+        
+        // Update name and lastNameChangedAt if they exist in firestore live data
+        if (data.name !== undefined) {
+          setCurrentUser(prev => {
+            if (!prev) {
+              return {
+                name: data.name || "طالب مميز",
+                email: auth.currentUser?.email || "",
+                level: data.level || "Intermediate",
+                lastNameChangedAt: data.lastNameChangedAt || ""
+              };
+            }
+            if (prev.name !== data.name || prev.lastNameChangedAt !== data.lastNameChangedAt) {
+              return {
+                ...prev,
+                name: data.name,
+                lastNameChangedAt: data.lastNameChangedAt || ""
+              };
+            }
+            return prev;
+          });
+        }
         
         // Update states only if they are genuinely different to prevent loops
         if (data.points !== undefined) {
@@ -2929,6 +2966,17 @@ export default function App() {
                         <button
                           type="button"
                           onClick={() => {
+                            if (currentUser?.lastNameChangedAt) {
+                              const lastChangeDate = new Date(currentUser.lastNameChangedAt);
+                              const now = new Date();
+                              const diffTime = now.getTime() - lastChangeDate.getTime();
+                              const diffDays = Math.floor(diffTime / (1000 * 65 * 60 * 24) / 1000) || Math.floor(diffTime / (1000 * 60 * 60 * 24)); // safer diff in days
+                              if (diffDays < 60) {
+                                const daysLeft = 60 - diffDays;
+                                alert(`⚠️ عذراً! لا يمكنك تعديل الاسم مجدداً إلا بعد مرور 60 يوماً من التعديل الأخير. متبقي ${daysLeft} يوم.`);
+                                return;
+                              }
+                            }
                             setEditingNameValue(currentUser?.name || "طالب مميز");
                             setIsEditingName(true);
                           }}
@@ -2946,7 +2994,7 @@ export default function App() {
                           <h3 className="text-sm font-black text-slate-800 mb-2">تعديل اسم الطالب ✏️</h3>
                           <div className="text-[11px] text-rose-600 font-bold mb-4 flex items-start gap-2 bg-rose-50 p-3 rounded-xl leading-relaxed border border-rose-100/65">
                             <AlertCircle className="w-4 h-4 shrink-0 text-rose-500 mt-0.5" />
-                            <span>تأكد من كتابة اسمك لأنه لا تستطيع تغيير اسمك بعد ذلك! ⚠️</span>
+                            <span>تأكد من كتابة اسمك بشكل صحيح، لأنه بمجرد تعديل الاسم لن تتمكن من تغييره مجدداً إلا بعد مرور 60 يوماً! ⚠️</span>
                           </div>
                           <input
                             type="text"
@@ -2975,7 +3023,7 @@ export default function App() {
                                 }
                                 
                                 // Keep UI updated
-                                setCurrentUser(prev => prev ? { ...prev, name: trimmed } : { name: trimmed, email: "", level: "Intermediate" });
+                                setCurrentUser(prev => prev ? { ...prev, name: trimmed, lastNameChangedAt: new Date().toISOString() } : { name: trimmed, email: "", level: "Intermediate", lastNameChangedAt: new Date().toISOString() });
 
                                 // Persist in LocalStorage & Firestore
                                 if (isLoggedIn && auth.currentUser) {
@@ -2984,6 +3032,7 @@ export default function App() {
                                     const docRef = doc(db, "students", uid);
                                     await setDoc(docRef, {
                                       name: trimmed,
+                                      lastNameChangedAt: new Date().toISOString(),
                                       updatedAt: new Date().toISOString()
                                     }, { merge: true });
                                     
@@ -2993,11 +3042,15 @@ export default function App() {
                                     if (savedProgressStr) {
                                       const parsed = JSON.parse(savedProgressStr);
                                       parsed.name = trimmed;
+                                      parsed.lastNameChangedAt = new Date().toISOString();
                                       localStorage.setItem(userProgressKey, JSON.stringify(parsed));
                                     }
                                   } catch (err) {
                                     console.error("Cloud name update failed:", err);
                                   }
+                                } else {
+                                  localStorage.setItem("stitchlab_guest_name", trimmed);
+                                  localStorage.setItem("stitchlab_guest_lastNameChangedAt", new Date().toISOString());
                                 }
 
                                 setIsEditingName(false);
@@ -3769,8 +3822,10 @@ export default function App() {
                           setCopiedUid(true);
                           setTimeout(() => setCopiedUid(false), 2000);
                         }}
-                        className={`py-1.5 px-3 rounded-xl transition-all shadow-sm active:scale-95 flex items-center justify-center cursor-pointer gap-1 text-xs font-black ${
-                          copiedUid ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-purple-650 hover:bg-purple-700 text-white"
+                        className={`py-1.5 px-3 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center cursor-pointer gap-1 text-xs font-black text-white ${
+                          copiedUid 
+                            ? "bg-emerald-600 hover:bg-emerald-700" 
+                            : "bg-gradient-to-r from-purple-600 via-pink-500 to-slate-500 hover:opacity-95"
                         }`}
                         title="نسخ الرقم المميز"
                       >
