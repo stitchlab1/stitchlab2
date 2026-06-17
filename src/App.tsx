@@ -2926,19 +2926,17 @@ export default function App() {
                     <div className="flex flex-col items-start sm:items-end text-slate-700 gap-0.5" id="student-profile-text-container">
                       <span className="text-xs font-black flex items-center gap-1.5 justify-end">
                         <span>الطالب: {currentUser?.name || "طالب مميز"}</span>
-                        {(!currentUser?.name || currentUser.name === "طالب مميز" || currentUser.name.includes("StitchLab") || currentUser.name.trim() === "") && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingNameValue(currentUser?.name || "طالب مميز");
-                              setIsEditingName(true);
-                            }}
-                            className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
-                            title="تعديل اسم الطالب"
-                          >
-                            <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingNameValue(currentUser?.name || "طالب مميز");
+                            setIsEditingName(true);
+                          }}
+                          className="hover:scale-110 active:scale-95 transition-transform p-1 text-purple-600 hover:text-pink-500 cursor-pointer rounded-lg bg-purple-50 hover:bg-purple-100 flex items-center justify-center shrink-0"
+                          title="تعديل اسم الطالب"
+                        >
+                          <Pen className="w-3 h-3 text-purple-600 hover:text-pink-600" />
+                        </button>
                       </span>
                     </div>
 
