@@ -1135,6 +1135,7 @@ export default function App() {
         const progressPayload = {
           uid,
           name: currentUser?.name || auth.currentUser.displayName || "طالب مميز",
+          lastNameChangedAt: currentUser?.lastNameChangedAt || "",
           email: auth.currentUser.email || "",
           level: userLevel,
           points: points,
@@ -1196,7 +1197,8 @@ export default function App() {
     quizAttempts, 
     analyzedCount,
     completedWordsCount,
-    studentSemester
+    studentSemester,
+    currentUser
   ]);
 
   // 🔄 LIVE FIRESTORE STUDENT DATA SYNCHRONIZATION WITH ONSNAPSHOT
@@ -1910,6 +1912,7 @@ export default function App() {
         const progressPayload = {
           uid,
           name: currentUser?.name || auth.currentUser.displayName || "طالب مميز",
+    lastNameChangedAt: currentUser?.lastNameChangedAt || "",
           email: auth.currentUser.email || "",
           level: userLevel,
           points: points,
@@ -2968,13 +2971,15 @@ export default function App() {
                           onClick={() => {
                             if (currentUser?.lastNameChangedAt) {
                               const lastChangeDate = new Date(currentUser.lastNameChangedAt);
-                              const now = new Date();
-                              const diffTime = now.getTime() - lastChangeDate.getTime();
-                              const diffDays = Math.floor(diffTime / (1000 * 65 * 60 * 24) / 1000) || Math.floor(diffTime / (1000 * 60 * 60 * 24)); // safer diff in days
-                              if (diffDays < 60) {
-                                const daysLeft = 60 - diffDays;
-                                alert(`⚠️ عذراً! لا يمكنك تعديل الاسم مجدداً إلا بعد مرور 60 يوماً من التعديل الأخير. متبقي ${daysLeft} يوم.`);
-                                return;
+                              if (!isNaN(lastChangeDate.getTime())) {
+                                const now = new Date();
+                                const diffTime = now.getTime() - lastChangeDate.getTime();
+                                const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                                if (diffDays < 60) {
+                                  const daysLeft = 60 - diffDays;
+                                  alert(`⚠️ عذراً! لا يمكنك تعديل الاسم مجدداً إلا بعد مرور 60 يوماً من التعديل الأخير. متبقي ${daysLeft} يوم.`);
+                                  return;
+                                }
                               }
                             }
                             setEditingNameValue(currentUser?.name || "طالب مميز");
@@ -4140,7 +4145,7 @@ export default function App() {
                   <li><strong className="font-bold text-slate-700">حفظ البيانات:</strong> يعتمد التطبيق على حسابك الشخصي في Google Drive لتخزين بياناتك في مجلد مخصص باسم 'StitchLab_Data'. أنت المسؤول الوحيد عن إدارة هذا المجلد ومحتوياته.</li>
                   <li><strong className="font-bold text-slate-700">إخلاء المسؤولية:</strong> يتم توفير التطبيق "كما هو" (As-Is). نحن لا نتحمل المسؤولية عن أي فقدان للبيانات ناتج عن حذف المستخدم للملفات من Google Drive أو أي سوء استخدام للحساب.</li>
                   <li><strong className="font-bold text-slate-700">التعديلات:</strong> نحتفظ بالحق في تعديل هذه الشروط أو تحديث ميزات التطبيق في أي وقت. استمرارك في استخدام التطبيق يعني قبولك لأي تعديلات جديدة.</li>
-                  <li><strong className="font-bold text-slate-700">التواصل:</strong> لأي استفسار أو ملاحظة، يمكنك التواصل معنا عبر <a href="https://www.facebook.com/StitchLab2027" target="_blank" rel="noopener noreferrer" className="text-purple-650 hover:text-pink-600 underline font-extrabold cursor-pointer">صفحتنا على فيسبوك</a>.</li>
+                  <li><strong className="font-bold text-slate-700">التواصل:</strong> لأي استفسار أو ملاحظة، يمكنك التواصل معنا عبر <a href="https://www.facebook.com/profile.php?id=61578668730709" target="_blank" rel="noopener noreferrer" className="text-purple-650 hover:text-pink-600 underline font-extrabold cursor-pointer">صفحتنا على فيسبوك</a>.</li>
                 </ul>
               </div>
 
