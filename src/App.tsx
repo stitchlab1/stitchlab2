@@ -2877,7 +2877,7 @@ export default function App() {
                     </div>
 
                     {isEditingName && (
-                      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4" dir="rtl">
+                      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center pt-[15vh] z-50 p-4 overflow-y-auto" dir="rtl">
                         <div className="bg-white rounded-[24px] p-6 max-w-sm w-full border border-pink-100 shadow-2xl text-right animate-fadeIn">
                           <h3 className="text-sm font-black text-slate-800 mb-2">تعديل اسم الطالب ✏️</h3>
                           <div className="text-[11px] text-rose-600 font-bold mb-4 flex items-start gap-2 bg-rose-50 p-3 rounded-xl leading-relaxed border border-rose-100/65">
