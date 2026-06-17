@@ -3512,11 +3512,11 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => {
-                              safeCopyToClipboard(academyInviteUrl, "📋 تم نسخ الرابط بنجاح إلى الحافظة!");
+                              safeCopyToClipboard(academyInviteUrl, "", true);
                             }}
                             className="py-1.5 px-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white rounded-lg text-[10px] font-black shrink-0 transition-all cursor-pointer shadow-xs active:scale-95 active:bg-gradient-to-r active:from-pink-500 active:via-purple-500 active:to-slate-400 active:text-white"
                           >
-                            (نسخ)
+                            نسخ
                           </button>
                         </div>
                       </div>
@@ -3568,7 +3568,7 @@ export default function App() {
                             <div className="grid grid-cols-3 gap-1.5 pt-2 border-t border-dashed border-slate-100 text-center text-[10px] font-bold text-slate-650">
                               <div className="bg-slate-50 rounded-xl p-1.5 flex flex-col justify-center">
                                 <span className="text-[9px] text-slate-400 font-extrabold mb-0.5">الفصل الدراسي 📚</span>
-                                <span className="text-purple-900 font-black truncate text-[9.5px]">{cl.studentSemester || "الفصل الدراسي الأول"}</span>
+                                <span className="text-purple-900 font-black truncate text-[11px]">{(cl.studentSemester || "").includes("ثاني") || (cl.studentSemester || "").includes("الثاني") ? "2" : "1"}</span>
                               </div>
                               <div className="bg-slate-50 rounded-xl p-1.5 flex flex-col justify-center">
                                 <span className="text-[9px] text-slate-400 font-extrabold mb-0.5">الكلمات المنجزة 📝</span>
