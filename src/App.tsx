@@ -204,8 +204,17 @@ export default function App() {
   const [authError, setAuthError] = useState<string>("");
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string>("");
   const [authLoading, setAuthLoading] = useState<boolean>(false);
-  const [agreedToTerms, setAgreedToTerms] = useState<boolean>(false);
+  const [agreedToTerms, setAgreedToTerms] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("stitchlab_agreed_to_terms") === "true";
+  });
   const [showTermsModal, setShowTermsModal] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("stitchlab_agreed_to_terms", agreedToTerms ? "true" : "false");
+    }
+  }, [agreedToTerms]);
 
   // Firestore & Gamification states
   const [points, setPoints] = useState<number>(() => {
