@@ -1722,34 +1722,27 @@ export default function App() {
   const handleLogout = async () => {
     try {
       if (hasUnsavedChanges) {
-        const confirmSave = window.confirm("لديك تقدم لغوي جديد غير محفوظ سحابياً في StitchLab. هل ترغب بحفظه في حسابك قبل تسجيل الخروج لمزامنته؟");
-        if (confirmSave) {
-          if (driveToken) {
-            await backupToGoogleDriveNow();
-          } else {
-            const uid = auth.currentUser ? auth.currentUser.uid : "guest";
-            const progressPayload = {
-              uid,
-              name: currentUser?.name || auth.currentUser?.displayName || "طالب مميز",
-              email: auth.currentUser?.email || "",
-              level: userLevel,
-              points: points,
-              unlockedLevel: unlockedLevel,
-              completedLevels: completedLevels,
-              completedGroups: completedGroups,
-              customFlashcards: customFlashcards,
-              conversationsHad: conversationsHad,
-              quizScore: quizScore,
-              quizAttempts: quizAttempts,
-              analyzedCount: analyzedCount,
-              completedWordsCount: completedWordsCount,
-              studentSemester: studentSemester,
-              updatedAt: new Date().toISOString()
-            };
-            localStorage.setItem(`stitchlab_student_${uid}_progress`, JSON.stringify(progressPayload));
-            setHasUnsavedChanges(false);
-          }
-        }
+        const uid = auth.currentUser ? auth.currentUser.uid : "guest";
+        const progressPayload = {
+          uid,
+          name: currentUser?.name || auth.currentUser?.displayName || "طالب مميز",
+          email: auth.currentUser?.email || "",
+          level: userLevel,
+          points: points,
+          unlockedLevel: unlockedLevel,
+          completedLevels: completedLevels,
+          completedGroups: completedGroups,
+          customFlashcards: customFlashcards,
+          conversationsHad: conversationsHad,
+          quizScore: quizScore,
+          quizAttempts: quizAttempts,
+          analyzedCount: analyzedCount,
+          completedWordsCount: completedWordsCount,
+          studentSemester: studentSemester,
+          updatedAt: new Date().toISOString()
+        };
+        localStorage.setItem(`stitchlab_student_${uid}_progress`, JSON.stringify(progressPayload));
+        setHasUnsavedChanges(false);
       }
       await signOut(auth);
       // Clean up session caches
