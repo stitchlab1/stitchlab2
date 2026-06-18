@@ -405,7 +405,7 @@ export default function HomeWorkspace({
     return (staticSheetWords && staticSheetWords.length > 0) ? (staticSheetWords as SheetWord[]) : DEFAULT_SHEET_WORDS;
   });
 
-  // Automated background Google Sheets re-fetch/revalidate (every 12 hours)
+  // Automated background Google Sheets re-fetch/revalidate (auto-updates every 30 seconds on load/mount)
   useEffect(() => {
     const checkAndAutoRefetch = async () => {
       const savedLink = localStorage.getItem("stitchlab_sheet_link") || "https://docs.google.com/spreadsheets/d/1BtCUNuf34uVEaQS_hPbINw0-ogACWzyKsN426QftNwI/edit?usp=drivesdk";
@@ -414,10 +414,10 @@ export default function HomeWorkspace({
       const lastFetchStr = localStorage.getItem("stitchlab_sheet_last_fetch_time");
       const lastFetch = lastFetchStr ? parseInt(lastFetchStr, 10) : 0;
       const now = Date.now();
-      const twelveHoursMs = 12 * 60 * 60 * 1000; // 43,200,000 milliseconds (12 hours)
+      const updateIntervalMs = 30 * 1000; // 30 seconds for dynamic instant updates on reload
 
-      if (now - lastFetch >= twelveHoursMs) {
-        console.log("StitchLab Auto-Refetch: 12 hours passed, auto-updating Google Sheet data dynamically...");
+      if (now - lastFetch >= updateIntervalMs) {
+        console.log("StitchLab Auto-Refetch: Fetching latest Google Sheet data dynamically...");
         try {
           const parsed = await parseGoogleSheet(savedLink);
           setSheetWords(parsed);
