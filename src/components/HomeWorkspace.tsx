@@ -405,6 +405,39 @@ export default function HomeWorkspace({
     return (staticSheetWords && staticSheetWords.length > 0) ? (staticSheetWords as SheetWord[]) : DEFAULT_SHEET_WORDS;
   });
 
+  // Automated background Google Sheets re-fetch/revalidate (every 12 hours)
+  useEffect(() => {
+    const checkAndAutoRefetch = async () => {
+      const savedLink = localStorage.getItem("stitchlab_sheet_link") || "https://docs.google.com/spreadsheets/d/1BtCUNuf34uVEaQS_hPbINw0-ogACWzyKsN426QftNwI/edit?usp=drivesdk";
+      if (!savedLink) return;
+
+      const lastFetchStr = localStorage.getItem("stitchlab_sheet_last_fetch_time");
+      const lastFetch = lastFetchStr ? parseInt(lastFetchStr, 10) : 0;
+      const now = Date.now();
+      const twelveHoursMs = 12 * 60 * 60 * 1000; // 43,200,000 milliseconds (12 hours)
+
+      if (now - lastFetch >= twelveHoursMs) {
+        console.log("StitchLab Auto-Refetch: 12 hours passed, auto-updating Google Sheet data dynamically...");
+        try {
+          const parsed = await parseGoogleSheet(savedLink);
+          setSheetWords(parsed);
+          localStorage.setItem("stitchlab_sheet_words", JSON.stringify(parsed));
+          localStorage.setItem("stitchlab_sheet_last_fetch_time", now.toString());
+          console.log(`StitchLab Auto-Refetch: Success. Synchronized ${parsed.length} cards in background.`);
+        } catch (err) {
+          console.error("StitchLab Background Auto-Refetch failed:", err);
+        }
+      }
+    };
+
+    // Run check on mount
+    checkAndAutoRefetch();
+
+    // Check periodically (e.g., every 5 minutes in case of long sessions)
+    const interval = setInterval(checkAndAutoRefetch, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [selectedLevel, setSelectedLevel] = useState<LearningLevel | null>(null);
   const [groupSearchQuery, setGroupSearchQuery] = useState("");
   const [lockedLevelNotice, setLockedLevelNotice] = useState<number | null>(null);
@@ -897,6 +930,7 @@ export default function HomeWorkspace({
       localStorage.setItem("stitchlab_sheet_words", JSON.stringify(parsed));
       localStorage.setItem("stitchlab_sheet_link", sheetLinkInput.trim());
       localStorage.setItem("stitchlab_sheet_synced_dirkt_v2", "true");
+      localStorage.setItem("stitchlab_sheet_last_fetch_time", Date.now().toString());
       setSyncSuccess(true);
       
       setTimeout(() => {
