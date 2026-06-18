@@ -979,6 +979,11 @@ export default function HomeWorkspace({
           if (setCompletedWordsCount) {
             setCompletedWordsCount(newCompletedWordsCount);
           }
+
+          // Update total groups count
+          if (onUnlockGroup) {
+            onUnlockGroup(groupKey);
+          }
         }
 
         // Find current level's groups to navigate or switch

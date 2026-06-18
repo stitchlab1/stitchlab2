@@ -3226,6 +3226,7 @@ export default function App() {
                     setCompletedWordsCount={setCompletedWordsCount}
                     studentSemester={studentSemester}
                     onUnlockGroup={(gKey) => {
+                      if (unlockedAdvertiserGroups.includes(gKey)) return;
                       const prevTotal = unlockedAdvertiserGroups.length;
                       let nextGroups: string[];
                       if (prevTotal === 0) {
