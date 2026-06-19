@@ -1456,7 +1456,16 @@ export default function HomeWorkspace({
             {/* Semantic layout (Beautiful Arabic Meaning) */}
             <div className="text-center mt-5 space-y-1.5 w-full">
               <span className="text-[10px] font-black text-rose-400/90 uppercase tracking-widest block font-sans">Definition | التعريف اللغوي 📝</span>
-              <div className="text-xl md:text-2xl font-extrabold text-slate-800 leading-normal tracking-wide antialiased transition-all">
+              <div 
+                className={`font-extrabold text-slate-800 leading-relaxed tracking-wide antialiased transition-all break-words whitespace-pre-wrap ${
+                  (currentWord.definition || currentWord.meaning || "").length > 120 
+                    ? "text-sm md:text-base animate-fadeIn" 
+                    : (currentWord.definition || currentWord.meaning || "").length > 50 
+                      ? "text-base md:text-lg animate-fadeIn" 
+                      : "text-xl md:text-2xl animate-fadeIn"
+                }`}
+                dir="rtl"
+              >
                 {currentWord.definition || currentWord.meaning}
               </div>
             </div>
