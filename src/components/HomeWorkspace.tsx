@@ -1065,8 +1065,6 @@ export default function HomeWorkspace({
         } catch (e) {}
       }
 
-      alert("⚠️ تم تخطي الكلمة بنجاح وخصم 10 نقاط من رصيدك الحالي.");
-
       // Reset incorrect speech attempts counter
       setIncorrectSpeechAttempts(0);
       setShowCompletionWarning(false);
