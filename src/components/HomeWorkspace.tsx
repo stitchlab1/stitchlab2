@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, Check, Lock, Sparkles, Volume2, Globe, ArrowRight, X, RefreshCw, FileSpreadsheet, Mic, ChevronRight, ChevronLeft, AlertCircle, ThumbsUp, CheckCircle } from "lucide-react";
 import { playAudioFeedback } from "./types";
 import staticSheetWords from "../data/staticSheetWords.json";
+import { getFilteredCompletedAndSkipped } from "../utils/wordFilters";
 import { auth, db } from "../firebaseClient";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import domtoimage from "dom-to-image";
@@ -482,6 +483,11 @@ export default function HomeWorkspace({
       semesters: Array.from(info.semesters)
     }));
   }, [sheetWords]);
+
+  // Word filtration based strictly on completed groups
+  const { filteredCompleted: filteredCompletedKeys, filteredSkipped: filteredSkippedKeys } = useMemo(() => {
+    return getFilteredCompletedAndSkipped(completedWordKeys, skippedWordKeys, completedGroupsProp || []);
+  }, [completedWordKeys, skippedWordKeys, completedGroupsProp]);
 
   const filteredGroups = useMemo(() => {
     if (!groupSearchQuery.trim()) return [];
@@ -1857,14 +1863,14 @@ export default function HomeWorkspace({
               <div>
                 <span className="block text-[10px] font-black text-slate-400 tracking-wide mb-0.5">الكلمات المنجزة</span>
                 <div className="text-sm font-black text-emerald-600 leading-tight">
-                  {completedWordKeys.length} كلمة
+                  {filteredCompletedKeys.length} كلمة
                 </div>
               </div>
               <div className="border-t border-slate-100/80 my-1 w-full"></div>
               <div>
                 <span className="block text-[10px] font-black text-slate-400 tracking-wide mb-0.5">الكلمات التي لم تنجزها</span>
                 <div className="text-sm font-black text-rose-600 leading-tight">
-                  {skippedWordKeys.length} كلمة ❌
+                  {filteredSkippedKeys.length} كلمة ❌
                 </div>
               </div>
             </div>
@@ -1894,7 +1900,7 @@ export default function HomeWorkspace({
             <div className="space-y-0.5">
               <span className="block text-[10px] font-black text-slate-400 tracking-wide">مجموع المجموعات</span>
               <div className="text-xl font-black text-slate-900 leading-tight">
-                {(unlockedAdvertiserGroups || []).length || 0} مجموعات
+                {(completedGroups || []).length || 0} مجموعات
               </div>
             </div>
           </div>
@@ -1924,10 +1930,10 @@ export default function HomeWorkspace({
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
             <span className="text-[10px] font-bold text-purple-300">الكلمات المنجزة 📝</span>
-            <div className="text-sm font-black text-emerald-400 font-sans">{completedWordKeys.length} كلمة</div>
+            <div className="text-sm font-black text-emerald-400 font-sans">{filteredCompletedKeys.length} كلمة</div>
             <div className="border-t border-white/10 my-1"></div>
             <span className="text-[10px] font-bold text-purple-300">الكلمات التي لم تنجزها ⏳</span>
-            <div className="text-sm font-black text-rose-400 font-sans">{skippedWordKeys.length} كلمة</div>
+            <div className="text-sm font-black text-rose-400 font-sans">{filteredSkippedKeys.length} كلمة</div>
           </div>
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
             <span className="text-[10px] font-bold text-purple-300">المستوى الحالي ⭐</span>
@@ -1939,7 +1945,7 @@ export default function HomeWorkspace({
           </div>
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
             <span className="text-[10px] font-bold text-purple-300">مجموع المجموعات</span>
-            <div className="text-xl font-black text-pink-300 font-sans">{(unlockedAdvertiserGroups || []).length || 0} مجموعات</div>
+            <div className="text-xl font-black text-pink-300 font-sans">{(completedGroups || []).length || 0} مجموعات</div>
           </div>
         </div>
       </div>

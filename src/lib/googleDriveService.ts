@@ -21,6 +21,8 @@ export interface BackupPayload {
     quizAttempts: number;
     studentSemester: string;
   };
+  completedWordKeys?: string[];
+  skippedWordKeys?: string[];
   updatedAt: string; // ISO String timestamp
 }
 

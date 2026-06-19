@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   BookOpen,
   Send,
@@ -57,6 +57,8 @@ import {
 } from "firebase/firestore";
 import { findBackupFile, getBackupContent, saveBackup, uploadPublicImage, type BackupPayload } from "./lib/googleDriveService";
 import HomeWorkspace from "./components/HomeWorkspace";
+import staticSheetWords from "./data/staticSheetWords.json";
+import { getFilteredCompletedAndSkipped } from "./utils/wordFilters";
 import confetti from "canvas-confetti";
 import AchievementsWorkspace from "./components/AchievementsWorkspace";
 import AboutWorkspace from "./components/AboutWorkspace";
@@ -284,6 +286,11 @@ export default function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const [isCloudSynced, setIsCloudSynced] = useState<boolean>(false);
   const isInitialLoad = React.useRef<boolean>(true);
+
+  // Compute filtered completed and skipped word lists strictly for completed groups
+  const { filteredCompleted: filteredCompletedKeys, filteredSkipped: filteredSkippedKeys } = useMemo(() => {
+    return getFilteredCompletedAndSkipped(completedWordKeys, skippedWordKeys, completedGroups);
+  }, [completedWordKeys, skippedWordKeys, completedGroups]);
 
   // Challenge states & modal triggers (Re-ordered after state definitions)
   const [challengeChallenger, setChallengeChallenger] = useState<string | null>(null);
@@ -632,6 +639,139 @@ export default function App() {
       return [];
     }
   });
+
+  // Retrospective Calculation and Synchronization of Completed/Skipped Words and Completed Groups
+  useEffect(() => {
+    // A. Gather all words in staticSheetWords + cached sheet words
+    const allWordsList: any[] = [];
+    if (Array.isArray(staticSheetWords)) {
+      allWordsList.push(...staticSheetWords);
+    }
+    try {
+      const cached = localStorage.getItem("stitchlab_sheet_words");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((item: any) => {
+            if (item && item.word && item.group) {
+              const exists = allWordsList.some(w => 
+                w.word?.toLowerCase().trim() === item.word?.toLowerCase().trim() && 
+                w.group?.toLowerCase().trim() === item.group?.toLowerCase().trim() &&
+                w.level === item.level
+              );
+              if (!exists) {
+                allWordsList.push(item);
+              }
+            }
+          });
+        }
+      }
+    } catch (_) {}
+
+    // Group words of each group key ("level_semester_group")
+    const groupWordsMap = new Map<string, Set<string>>();
+    allWordsList.forEach((item: any) => {
+      if (item && item.word && item.group && item.semester && item.level) {
+        const key = `${item.level}_${item.semester.trim()}_${item.group.trim()}`;
+        const wVal = item.word.toLowerCase().trim();
+        if (wVal) {
+          const s = groupWordsMap.get(key) || new Set<string>();
+          s.add(wVal);
+          groupWordsMap.set(key, s);
+        }
+      }
+    });
+
+    // 1. Level-to-Groups Retrospective Hydration
+    const finalCompletedGroups = new Set<string>(completedGroups);
+    if (Array.isArray(completedLevels) && completedLevels.length > 0) {
+      allWordsList.forEach((item: any) => {
+        if (item && item.group && item.semester && item.level && completedLevels.includes(item.level)) {
+          const key = `${item.level}_${item.semester.trim()}_${item.group.trim()}`;
+          finalCompletedGroups.add(key);
+        }
+      });
+    }
+
+    // 2. Groups-to-Words Retrospective Hydration (Hydrate completed word keys from completed groups)
+    const finalCompletedWordsSet = new Set<string>(completedWordKeys.map(k => k.toLowerCase().trim()));
+    let completedWordKeysChanged = false;
+
+    finalCompletedGroups.forEach(gKey => {
+      const wordsSet = groupWordsMap.get(gKey);
+      if (wordsSet) {
+        wordsSet.forEach(w => {
+          if (!finalCompletedWordsSet.has(w)) {
+            finalCompletedWordsSet.add(w);
+            completedWordKeysChanged = true;
+          }
+        });
+      }
+    });
+
+    if (completedWordKeysChanged) {
+      const sortedNewKeys = Array.from(finalCompletedWordsSet);
+      setCompletedWordKeys(sortedNewKeys);
+      localStorage.setItem("stitchlab_completed_word_keys", JSON.stringify(sortedNewKeys));
+      if (completedWordsCount < sortedNewKeys.length) {
+        setCompletedWordsCount(sortedNewKeys.length);
+      }
+    }
+
+    // 3. Cleansing Skipped Words: Keep only those that the user explicitly skipped, and filter out any completed words.
+    const cleanedSkippedList = skippedWordKeys.filter(k => {
+      const trimmed = k.toLowerCase().trim();
+      return trimmed && !finalCompletedWordsSet.has(trimmed);
+    });
+
+    const currentSkippedSorted = [...skippedWordKeys].map(k => k.toLowerCase().trim()).sort().join(",");
+    const targetSkippedSorted = [...cleanedSkippedList].map(k => k.toLowerCase().trim()).sort().join(",");
+
+    if (currentSkippedSorted !== targetSkippedSorted) {
+      setSkippedWordKeys(cleanedSkippedList);
+      localStorage.setItem("stitchlab_skipped_word_keys", JSON.stringify(cleanedSkippedList));
+    }
+
+    // 4. Words-to-Groups Retrospective Hydration
+    // Check which group keys have ALL of their words fully completed in completedWordKeys list
+    const finalUnlockedAdGroupsSet = new Set<string>(unlockedAdvertiserGroups);
+
+    groupWordsMap.forEach((wordsSet, groupKey) => {
+      if (wordsSet.size > 0) {
+        let allCompleted = true;
+        for (const w of wordsSet) {
+          if (!finalCompletedWordsSet.has(w)) {
+            allCompleted = false;
+            break;
+          }
+        }
+        if (allCompleted) {
+          finalCompletedGroups.add(groupKey);
+          finalUnlockedAdGroupsSet.add(groupKey);
+        }
+      }
+    });
+
+    // Save and update completed and unlocked advertiser group states if there are changes
+    const targetCompletedGroupsList = Array.from(finalCompletedGroups);
+    const targetUnlockedGroupsList = Array.from(finalUnlockedAdGroupsSet);
+
+    const currentCompletedSorted = [...completedGroups].sort().join(",");
+    const targetCompletedSorted = [...targetCompletedGroupsList].sort().join(",");
+
+    const currentUnlockedSorted = [...unlockedAdvertiserGroups].sort().join(",");
+    const targetUnlockedSorted = [...targetUnlockedGroupsList].sort().join(",");
+
+    if (currentCompletedSorted !== targetCompletedSorted) {
+      setCompletedGroups(targetCompletedGroupsList);
+      localStorage.setItem("stitchlab_completed_groups", JSON.stringify(targetCompletedGroupsList));
+    }
+
+    if (currentUnlockedSorted !== targetUnlockedSorted) {
+      setUnlockedAdvertiserGroups(targetUnlockedGroupsList);
+      localStorage.setItem("stitchlab_unlocked_ad_groups", JSON.stringify(targetUnlockedGroupsList));
+    }
+  }, [completedWordKeys, skippedWordKeys, completedGroups, unlockedAdvertiserGroups, completedLevels]);
 
   // Quote state
   const [quoteIndex, setQuoteIndex] = useState<number>(0);
@@ -1038,6 +1178,8 @@ export default function App() {
           quizAttempts: quizAttempts,
           studentSemester: studentSemester
         },
+        completedWordKeys: completedWordKeys,
+        skippedWordKeys: skippedWordKeys,
         updatedAt: new Date().toISOString()
       };
 
@@ -1101,24 +1243,32 @@ export default function App() {
       }
 
       const backup = await getBackupContent(finalToken, file.id);
-      if (backup) {
-        // Apply state restorers!
-        setUserLevel(backup.Level || "Intermediate");
-        setCustomFlashcards(backup.SavedWords || []);
-        if (backup.WordCounter) {
-          setCompletedWordsCount(backup.WordCounter.completedWordsCount || 0);
-          setAnalyzedCount(backup.WordCounter.analyzedCount || 0);
-        }
-        if (backup.Achievements) {
-          setPoints(backup.Achievements.points || 0);
-          setUnlockedLevel(backup.Achievements.unlockedLevel || 1);
-          setCompletedLevels(backup.Achievements.completedLevels || []);
-          setCompletedGroups(backup.Achievements.completedGroups || []);
-          setConversationsHad(backup.Achievements.conversationsHad || 0);
-          setQuizScore(backup.Achievements.quizScore || 0);
-          setQuizAttempts(backup.Achievements.quizAttempts || 0);
-          setStudentSemester(backup.Achievements.studentSemester || "الفصل الدراسي الأول");
-        }
+        if (backup) {
+          // Apply state restorers!
+          setUserLevel(backup.Level || "Intermediate");
+          setCustomFlashcards(backup.SavedWords || []);
+          if (backup.WordCounter) {
+            setCompletedWordsCount(backup.WordCounter.completedWordsCount || 0);
+            setAnalyzedCount(backup.WordCounter.analyzedCount || 0);
+          }
+          if (backup.Achievements) {
+            setPoints(backup.Achievements.points || 0);
+            setUnlockedLevel(backup.Achievements.unlockedLevel || 1);
+            setCompletedLevels(backup.Achievements.completedLevels || []);
+            setCompletedGroups(backup.Achievements.completedGroups || []);
+            setConversationsHad(backup.Achievements.conversationsHad || 0);
+            setQuizScore(backup.Achievements.quizScore || 0);
+            setQuizAttempts(backup.Achievements.quizAttempts || 0);
+            setStudentSemester(backup.Achievements.studentSemester || "الفصل الدراسي الأول");
+          }
+          if (backup.completedWordKeys) {
+            setCompletedWordKeys(backup.completedWordKeys);
+            localStorage.setItem("stitchlab_completed_word_keys", JSON.stringify(backup.completedWordKeys));
+          }
+          if (backup.skippedWordKeys) {
+            setSkippedWordKeys(backup.skippedWordKeys);
+            localStorage.setItem("stitchlab_skipped_word_keys", JSON.stringify(backup.skippedWordKeys));
+          }
         
         setHasUnsavedChanges(false);
         setShowRestoreSuggestion(false);
@@ -1156,6 +1306,8 @@ export default function App() {
           quizAttempts: quizAttempts,
           studentSemester: studentSemester
         },
+        completedWordKeys: completedWordKeys,
+        skippedWordKeys: skippedWordKeys,
         updatedAt: new Date().toISOString()
       };
       
@@ -1322,6 +1474,12 @@ export default function App() {
         if (data.unlockedAdvertiserGroups !== undefined) {
           setUnlockedAdvertiserGroups(prev => JSON.stringify(prev) !== JSON.stringify(data.unlockedAdvertiserGroups) ? data.unlockedAdvertiserGroups : prev);
         }
+        if (data.completedWordKeys !== undefined) {
+          setCompletedWordKeys(prev => JSON.stringify(prev) !== JSON.stringify(data.completedWordKeys) ? data.completedWordKeys : prev);
+        }
+        if (data.skippedWordKeys !== undefined) {
+          setSkippedWordKeys(prev => JSON.stringify(prev) !== JSON.stringify(data.skippedWordKeys) ? data.skippedWordKeys : prev);
+        }
         if (data.level !== undefined) {
           setUserLevel(prev => prev !== data.level ? data.level : prev);
         }
@@ -1345,6 +1503,8 @@ export default function App() {
           quizScore: quizScore,
           completedGroups: completedGroups,
           unlockedAdvertiserGroups: unlockedAdvertiserGroups,
+          completedWordKeys: completedWordKeys,
+          skippedWordKeys: skippedWordKeys,
           level: userLevel,
           studentSemester: studentSemester,
           analyzedCount: analyzedCount,
@@ -1381,6 +1541,8 @@ export default function App() {
           quizScore: quizScore,
           completedGroups: completedGroups,
           unlockedAdvertiserGroups: unlockedAdvertiserGroups,
+          completedWordKeys: completedWordKeys,
+          skippedWordKeys: skippedWordKeys,
           level: userLevel,
           studentSemester: studentSemester,
           analyzedCount: analyzedCount,
@@ -1403,6 +1565,8 @@ export default function App() {
     quizScore,
     completedGroups,
     unlockedAdvertiserGroups,
+    completedWordKeys,
+    skippedWordKeys,
     userLevel,
     studentSemester,
     analyzedCount,
@@ -1961,6 +2125,8 @@ export default function App() {
       localStorage.setItem("stitchlab_quiz_attempts", quizAttempts.toString());
       localStorage.setItem("stitchlab_analyzed_count", analyzedCount.toString());
       localStorage.setItem("stitchlab_student_semester", studentSemester);
+      localStorage.setItem("stitchlab_completed_word_keys", JSON.stringify(completedWordKeys));
+      localStorage.setItem("stitchlab_skipped_word_keys", JSON.stringify(skippedWordKeys));
 
       if (isLoggedIn && auth.currentUser) {
         const uid = auth.currentUser.uid;
@@ -1976,6 +2142,8 @@ export default function App() {
           completedLevels: finalCompletedLevels,
           completedGroups: finalCompletedGroups,
           unlockedAdvertiserGroups: unlockedAdvertiserGroups,
+          completedWordKeys: completedWordKeys,
+          skippedWordKeys: skippedWordKeys,
           customFlashcards: customFlashcards,
           conversationsHad: conversationsHad,
           quizScore: quizScore,
@@ -4012,7 +4180,7 @@ export default function App() {
                           ⏩
                         </div>
                         <div className="text-right">
-                          <h4 className="text-sm font-black text-rose-950">الكلمات المتخطاة ({skippedWordKeys.length})</h4>
+                          <h4 className="text-sm font-black text-rose-950">الكلمات المتخطاة ({filteredSkippedKeys.length})</h4>
                         </div>
                       </div>
                       <span className={`text-slate-400 font-bold text-xs transition-transform duration-200 ${showSkippedWordsList ? "rotate-180 text-rose-600" : ""}`}>
@@ -4026,13 +4194,13 @@ export default function App() {
                           الكلمات التي تخطيتها وتريد مراجعتها للفوز بنقاطها 🎯
                         </div>
 
-                        {skippedWordKeys.length === 0 ? (
+                        {filteredSkippedKeys.length === 0 ? (
                           <div className="text-xs text-slate-400 font-bold bg-slate-50/80 text-center py-4 rounded-xl border border-rose-100/30">
                             رائع! لا توجد كلمات متخطاة حالياً 🎉
                           </div>
                         ) : (
                           <div className="max-h-[180px] overflow-y-auto space-y-1.5 pr-0.5" id="skipped-words-settings-scoller">
-                            {skippedWordKeys.map((wordKey) => {
+                            {filteredSkippedKeys.map((wordKey) => {
                               // Try finding matching word definition for meaning from local GSheet cached words
                               let meaning = "";
                               try {
