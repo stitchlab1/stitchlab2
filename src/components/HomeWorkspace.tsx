@@ -66,6 +66,7 @@ interface SheetWord {
   semester: string; // الفصل الدراسي
   word: string;     // الكلمة بالإنجليزية
   meaning: string;  // المعنى بالكامل بالعربية
+  definition?: string; // التعريف والترجمة التوضيحية
   ipa?: string;     // الرمز الصوتي والنطق
   imageUrl?: string;// رابط الصورة
   group?: string;   // المجموعة أو التصنيف
@@ -262,7 +263,8 @@ const parseGoogleSheet = async (sheetUrlOrId: string): Promise<SheetWord[]> => {
 
   const semIdx = findColumnIndex(["الفصل", "فصل", "ترم", "term", "chapter", "semester"]);
   const wordIdx = findColumnIndex(["الكلمة", "كلمة", "مفردة", "word", "english", "en"]);
-  const meanIdx = findColumnIndex(["المعنى", "معنى", "ترجمة", "meaning", "translation", "arabic", "ar", "definition", "التعريف", "تعريف"]);
+  const meanIdx = findColumnIndex(["المعنى", "معنى", "ترجمة", "meaning", "translation", "arabic", "ar"]);
+  const defIdx = findColumnIndex(["definition", "التعريف", "تعريف", "التعاريف", "explanation", "details"]);
   const ipaIdx = findColumnIndex(["النطق", "صوت", "لفظ", "ipa", "pronunciation", "phonics"]);
   const imgIdx = findColumnIndex(["dirkt link", "direct link", "dirkt", "direct", "الصورة", "رابط", "image", "url", "link", "photo", "pic"]);
   const grpIdx = findColumnIndex(["group nama", "groupname", "المجموعة", "مجموعة", "تصنيف", "category", "group", "class"]);
@@ -282,15 +284,20 @@ const parseGoogleSheet = async (sheetUrlOrId: string): Promise<SheetWord[]> => {
     };
 
     const word = getVal(wordIdx);
-    const meaning = getVal(meanIdx);
+    const rawMeaning = getVal(meanIdx);
+    const rawDefinition = getVal(defIdx);
 
     if (!word || word.toLowerCase() === "word" || word === "الكلمة") return;
+
+    const meaning = rawMeaning || rawDefinition || "";
+    const definition = rawDefinition || rawMeaning || "";
 
     parsedWords.push({
       id: `synced-${rIdx}-${Math.random().toString(36).substring(4)}`,
       semester: getVal(semIdx) || "الفصل الدراسي الأول",
       word: word,
       meaning: meaning,
+      definition: definition,
       ipa: getVal(ipaIdx) || "",
       imageUrl: convertToDirectImageUrl(getVal(imgIdx)),
       group: getVal(grpIdx) || "عادية",
@@ -1447,9 +1454,10 @@ export default function HomeWorkspace({
             </div>
             
             {/* Semantic layout (Beautiful Arabic Meaning) */}
-            <div className="text-center mt-5 space-y-1 w-full">
+            <div className="text-center mt-5 space-y-1.5 w-full">
+              <span className="text-[10px] font-black text-rose-400/90 uppercase tracking-widest block font-sans">Definition | التعريف اللغوي 📝</span>
               <div className="text-xl md:text-2xl font-extrabold text-slate-800 leading-normal tracking-wide antialiased transition-all">
-                {currentWord.meaning}
+                {currentWord.definition || currentWord.meaning}
               </div>
             </div>
           </div>
