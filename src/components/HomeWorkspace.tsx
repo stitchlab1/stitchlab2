@@ -51,6 +51,14 @@ interface HomeWorkspaceProps {
     unlockedLevel: number;
     completedLevels: number[];
   }>) => void;
+  points?: number;
+  setPoints?: React.Dispatch<React.SetStateAction<number>>;
+  completedWordKeys?: string[];
+  setCompletedWordKeys?: React.Dispatch<React.SetStateAction<string[]>>;
+  skippedWordKeys?: string[];
+  setSkippedWordKeys?: React.Dispatch<React.SetStateAction<string[]>>;
+  reviewTargetWord?: string | null;
+  setReviewTargetWord?: (w: string | null) => void;
 }
 
 interface SheetWord {
@@ -393,7 +401,15 @@ export default function HomeWorkspace({
   completedWordsCount,
   setCompletedWordsCount,
   studentSemester = "الفصل الدراسي الأول",
-  onForceSaveProgress
+  onForceSaveProgress,
+  points,
+  setPoints,
+  completedWordKeys = [],
+  setCompletedWordKeys,
+  skippedWordKeys = [],
+  setSkippedWordKeys,
+  reviewTargetWord,
+  setReviewTargetWord
 }: HomeWorkspaceProps) {
   const [sheetWords, setSheetWords] = useState<SheetWord[]>(() => {
     const saved = localStorage.getItem("stitchlab_sheet_words");
@@ -482,6 +498,7 @@ export default function HomeWorkspace({
   const [speechStatus, setSpeechStatus] = useState<string>("");
   const [speechText, setSpeechText] = useState<string>("");
   const [speechScore, setSpeechScore] = useState<boolean | null>(null);
+  const [incorrectSpeechAttempts, setIncorrectSpeechAttempts] = useState<number>(0);
 
   const [hasListened, setHasListened] = useState<boolean>(false);
   const [dismissedSpecialBubble, setDismissedSpecialBubble] = useState<boolean>(false);
@@ -807,6 +824,7 @@ export default function HomeWorkspace({
     setDismissedSpecialBubble(false);
     setShowCompletionWarning(false);
     setSpellingFeedback({ type: null, msg: "" });
+    setIncorrectSpeechAttempts(0);
   }, [currentWordIndex, activeTrainingLevel]);
 
   const uniqueSemestersInModal = useMemo(() => {
@@ -899,6 +917,47 @@ export default function HomeWorkspace({
     }
   }, [uniqueSemesters, selectedSemester]);
 
+  useEffect(() => {
+    if (reviewTargetWord) {
+      const trimmedWord = reviewTargetWord.toLowerCase().trim();
+      const found = sheetWords.find(w => w.word.toLowerCase().trim() === trimmedWord);
+      if (found) {
+        const lvlObj = LEARNING_LEVELS.find(l => l.number === found.level);
+        if (lvlObj) {
+          setActiveTrainingLevel(lvlObj);
+          setActiveTrainingSemester(found.semester);
+          setActiveTrainingGroup(found.group || "عادية");
+
+          // Let's filter level words
+          let levelWords = sheetWords.filter(w => w.level === found.level);
+          if (found.semester) {
+            levelWords = levelWords.filter(w => w.semester === found.semester);
+          }
+          if (found.group) {
+            levelWords = levelWords.filter(w => w.group === found.group);
+          } else {
+            levelWords = levelWords.filter(w => !w.group || w.group === "عادية" || w.group === "");
+          }
+
+          const wordIdx = levelWords.findIndex(w => w.word.toLowerCase().trim() === trimmedWord);
+          if (wordIdx !== -1) {
+            setCurrentWordIndex(wordIdx);
+          } else {
+            setCurrentWordIndex(0);
+          }
+
+          setIncorrectSpeechAttempts(0);
+          setShowCompletionWarning(false);
+          setSpeechStatus("");
+          setSpeechScore(null);
+        }
+      }
+      if (typeof setReviewTargetWord === "function") {
+        setReviewTargetWord(null);
+      }
+    }
+  }, [reviewTargetWord, sheetWords, LEARNING_LEVELS, setReviewTargetWord]);
+
   const semesterWords = useMemo(() => {
     return sheetWords.filter(w => w.semester === selectedSemester);
   }, [sheetWords, selectedSemester]);
@@ -972,6 +1031,131 @@ export default function HomeWorkspace({
       }
     };
 
+    const handleSkipWord = () => {
+      // Mark as skipped!
+      const wKey = currentWord.word.toLowerCase().trim();
+      let updatedSkipped = [...skippedWordKeys];
+      if (!updatedSkipped.includes(wKey)) {
+        updatedSkipped.push(wKey);
+        if (setSkippedWordKeys) {
+          setSkippedWordKeys(updatedSkipped);
+        }
+        localStorage.setItem("stitchlab_skipped_word_keys", JSON.stringify(updatedSkipped));
+      }
+      // Remove from completed
+      let updatedCompleted = [...completedWordKeys];
+      if (updatedCompleted.includes(wKey)) {
+        updatedCompleted = updatedCompleted.filter(k => k !== wKey);
+        if (setCompletedWordKeys) {
+          setCompletedWordKeys(updatedCompleted);
+        }
+        localStorage.setItem("stitchlab_completed_word_keys", JSON.stringify(updatedCompleted));
+        if (setCompletedWordsCount) {
+          setCompletedWordsCount(updatedCompleted.length);
+        }
+      }
+
+      // 1. Deduct 10 points for skipping
+      if (setPoints) {
+        setPoints(prev => Math.max(0, prev - 10));
+      } else {
+        try {
+          const currentPts = parseInt(localStorage.getItem("stitchlab_points") || "0", 10);
+          localStorage.setItem("stitchlab_points", Math.max(0, currentPts - 10).toString());
+        } catch (e) {}
+      }
+
+      alert("⚠️ تم تخطي الكلمة بنجاح وخصم 10 نقاط من رصيدك الحالي.");
+
+      // Reset incorrect speech attempts counter
+      setIncorrectSpeechAttempts(0);
+      setShowCompletionWarning(false);
+
+      // 2. Go to the next word or handle completing the group/level
+      if (currentWordIndex < trainingWords.length - 1) {
+        setCurrentWordIndex(prev => prev + 1);
+        if (onForceSaveProgress) {
+          onForceSaveProgress({ completedWordsCount: updatedCompleted.length });
+        }
+      } else {
+        // Complete the group
+        const groupKey = `${activeTrainingLevel.number}_${activeTrainingSemester}_${activeTrainingGroup}`;
+        const newCompleted = [...completedGroups];
+        let newCompletedWordsCount = updatedCompleted.length;
+        
+        if (!newCompleted.includes(groupKey)) {
+          newCompleted.push(groupKey);
+          setCompletedGroups(newCompleted);
+          localStorage.setItem("stitchlab_completed_groups", JSON.stringify(newCompleted));
+          
+          if (setCompletedWordsCount) {
+            setCompletedWordsCount(newCompletedWordsCount);
+          }
+
+          if (onUnlockGroup) {
+            onUnlockGroup(groupKey);
+          }
+        }
+
+        const currentLevelNumber = activeTrainingLevel.number;
+        const groupsInCurrentLevel = allSortedGroups.filter(g => g.level === currentLevelNumber);
+        const currentGroupIndex = groupsInCurrentLevel.findIndex(g => g.key === groupKey);
+
+        const nextGroup = groupsInCurrentLevel[currentGroupIndex + 1];
+
+        if (nextGroup) {
+          // Transition directly to the next group
+          setActiveTrainingSemester(nextGroup.semester);
+          setActiveTrainingGroup(nextGroup.group);
+          setCurrentWordIndex(0);
+          
+          if (onForceSaveProgress) {
+            onForceSaveProgress({
+              completedGroups: newCompleted,
+              completedWordsCount: newCompletedWordsCount
+            });
+          }
+        } else {
+          // Finished all semesters in this level (Level Completed)
+          onLevelComplete(currentLevelNumber);
+          
+          const nextLevelNumber = currentLevelNumber + 1;
+          const nextLevelObj = LEARNING_LEVELS.find(l => l.number === nextLevelNumber);
+          
+          const nextCompletedLevels = [...completedLevels];
+          if (!nextCompletedLevels.includes(currentLevelNumber)) {
+            nextCompletedLevels.push(currentLevelNumber);
+          }
+          const nextUnlockedLevel = Math.min(9, currentLevelNumber + 1);
+
+          if (onForceSaveProgress) {
+            onForceSaveProgress({
+              completedGroups: newCompleted,
+              completedWordsCount: newCompletedWordsCount,
+              completedLevels: nextCompletedLevels,
+              unlockedLevel: nextUnlockedLevel
+            });
+          }
+
+          if (nextLevelObj) {
+            const groupsInNextLevel = allSortedGroups.filter(g => g.level === nextLevelNumber);
+            const firstGroupOfNextLevel = groupsInNextLevel[0];
+            
+            if (firstGroupOfNextLevel) {
+              setActiveTrainingLevel(nextLevelObj);
+              setActiveTrainingSemester(firstGroupOfNextLevel.semester);
+              setActiveTrainingGroup(firstGroupOfNextLevel.group);
+              setCurrentWordIndex(0);
+            } else {
+              setActiveTrainingLevel(null);
+            }
+          } else {
+            setActiveTrainingLevel(null);
+          }
+        }
+      }
+    };
+
     const handleNextWord = () => {
       const isWordDone = successCount >= 3 && hasListened && speechScore === true;
       if (!isWordDone) {
@@ -980,6 +1164,29 @@ export default function HomeWorkspace({
       }
 
       setShowCompletionWarning(false);
+
+      // Mark as completed!
+      const wKey = currentWord.word.toLowerCase().trim();
+      let updatedCompleted = [...completedWordKeys];
+      if (!updatedCompleted.includes(wKey)) {
+        updatedCompleted.push(wKey);
+        if (setCompletedWordKeys) {
+          setCompletedWordKeys(updatedCompleted);
+        }
+        localStorage.setItem("stitchlab_completed_word_keys", JSON.stringify(updatedCompleted));
+        if (setCompletedWordsCount) {
+          setCompletedWordsCount(updatedCompleted.length);
+        }
+      }
+      // Remove from skipped
+      let updatedSkipped = [...skippedWordKeys];
+      if (updatedSkipped.includes(wKey)) {
+        updatedSkipped = updatedSkipped.filter(k => k !== wKey);
+        if (setSkippedWordKeys) {
+          setSkippedWordKeys(updatedSkipped);
+        }
+        localStorage.setItem("stitchlab_skipped_word_keys", JSON.stringify(updatedSkipped));
+      }
 
       // Trigger Confetti immediately for user engagement
       try {
@@ -995,21 +1202,19 @@ export default function HomeWorkspace({
       if (currentWordIndex < trainingWords.length - 1) {
         setCurrentWordIndex(prev => prev + 1);
         if (onForceSaveProgress) {
-          onForceSaveProgress({ completedWordsCount: completedWordsCount });
+          onForceSaveProgress({ completedWordsCount: updatedCompleted.length });
         }
       } else {
         // Save completed group key in completed groups!
         const groupKey = `${activeTrainingLevel.number}_${activeTrainingSemester}_${activeTrainingGroup}`;
         const newCompleted = [...completedGroups];
-        let newCompletedWordsCount = completedWordsCount;
+        let newCompletedWordsCount = updatedCompleted.length;
         
         if (!newCompleted.includes(groupKey)) {
           newCompleted.push(groupKey);
           setCompletedGroups(newCompleted);
           localStorage.setItem("stitchlab_completed_groups", JSON.stringify(newCompleted));
           
-          // Complete entire group words at once upon completion and transition
-          newCompletedWordsCount = completedWordsCount + trainingWords.length;
           if (setCompletedWordsCount) {
             setCompletedWordsCount(newCompletedWordsCount);
           }
@@ -1150,6 +1355,11 @@ export default function HomeWorkspace({
             setSpeechScore(false);
             setSpeechStatus(`Try again! ⚠️ لم يتطابق تماماً. لقد سمعنا: "${transcript}". حاول مرة أخرى!`);
             playAudioFeedback(false);
+            setIncorrectSpeechAttempts(prev => {
+              const nextVal = prev + 1;
+              console.log("StitchLab debug: speech failure counter = ", nextVal);
+              return nextVal;
+            });
           }
         };
 
@@ -1459,7 +1669,7 @@ export default function HomeWorkspace({
 
         </div>
 
-        {/* Bottom Modern Elegant Navigation Bar (Prev left, Next right) */}
+        {/* Bottom Modern Elegant Navigation Bar (Prev left, Next right, with Skip in center) */}
         <div className="max-w-md w-full mx-auto flex flex-col gap-2.5 mt-4">
           
           <div className="w-full flex justify-between items-center bg-white border border-pink-100 rounded-2xl p-4 shadow-sm">
@@ -1473,6 +1683,26 @@ export default function HomeWorkspace({
               <ChevronRight className="w-4 h-4" />
               <span>السابق</span>
             </button>
+
+            {/* Skip (تخطي) Button — Centered between Previous and Next */}
+            <div className="flex flex-col items-center gap-1 select-none">
+              <button
+                type="button"
+                onClick={handleSkipWord}
+                disabled={incorrectSpeechAttempts < 5}
+                className={`py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 active:scale-[0.97] border ${
+                  incorrectSpeechAttempts >= 5
+                    ? "bg-rose-105 hover:bg-rose-200 text-rose-700 border-rose-300 shadow-sm scale-105 cursor-pointer"
+                    : "bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed opacity-50"
+                }`}
+                title={incorrectSpeechAttempts >= 5 ? "تخطي هذه الكلمة والخصم من النقاط" : "يتفعل بعد 5 محاولات نطق خاطئة"}
+              >
+                <span>تخطي ⏩</span>
+              </button>
+              <span className={`text-[9px] font-black ${incorrectSpeechAttempts >= 5 ? "text-rose-600 animate-pulse font-extrabold" : "text-slate-400 font-bold"}`}>
+                {incorrectSpeechAttempts} / 5 خطأ
+              </span>
+            </div>
 
             {/* Next (التالي) -> Right Side of row in RTL layout */}
             <button
@@ -1607,11 +1837,20 @@ export default function HomeWorkspace({
       <div className="max-w-md mx-auto mb-6 px-3" id="visible-stats-panel">
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white rounded-3xl border border-purple-100/80 p-4 flex flex-col items-center justify-center text-center shadow-xs">
-            <div className="text-3xl mb-1.5 filter drop-shadow">📝</div>
-            <div className="space-y-0.5">
-              <span className="block text-[10px] font-black text-slate-400 tracking-wide">الكلمات المنجزة</span>
-              <div className="text-xl font-black text-slate-900 leading-tight">
-                {completedWordsCount}
+            <div className="text-3xl mb-1 filter drop-shadow">📝</div>
+            <div className="space-y-1.5 w-full">
+              <div>
+                <span className="block text-[10px] font-black text-slate-400 tracking-wide mb-0.5">الكلمات المنجزة</span>
+                <div className="text-sm font-black text-emerald-600 leading-tight">
+                  {completedWordKeys.length} كلمة
+                </div>
+              </div>
+              <div className="border-t border-slate-100/80 my-1 w-full"></div>
+              <div>
+                <span className="block text-[10px] font-black text-slate-400 tracking-wide mb-0.5">الكلمات التي لم تنجزها</span>
+                <div className="text-sm font-black text-rose-600 leading-tight">
+                  {skippedWordKeys.length} كلمة ❌
+                </div>
               </div>
             </div>
           </div>
@@ -1670,7 +1909,10 @@ export default function HomeWorkspace({
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
             <span className="text-[10px] font-bold text-purple-300">الكلمات المنجزة 📝</span>
-            <div className="text-2xl font-black text-amber-300 font-sans">{completedWordsCount}</div>
+            <div className="text-sm font-black text-emerald-400 font-sans">{completedWordKeys.length} كلمة</div>
+            <div className="border-t border-white/10 my-1"></div>
+            <span className="text-[10px] font-bold text-purple-300">الكلمات التي لم تنجزها ⏳</span>
+            <div className="text-sm font-black text-rose-400 font-sans">{skippedWordKeys.length} كلمة</div>
           </div>
           <div className="bg-white/5 rounded-2xl border border-white/10 p-4 text-center space-y-1">
             <span className="text-[10px] font-bold text-purple-300">المستوى الحالي ⭐</span>

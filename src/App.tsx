@@ -240,12 +240,40 @@ export default function App() {
       return [];
     }
   });
+  const [completedWordKeys, setCompletedWordKeys] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stitchlab_completed_word_keys");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [skippedWordKeys, setSkippedWordKeys] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("stitchlab_skipped_word_keys");
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [reviewTargetWord, setReviewTargetWord] = useState<string | null>(null);
   const [analyzedCount, setAnalyzedCount] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
     return parseInt(localStorage.getItem("stitchlab_analyzed_count") || "0", 10);
   });
   const [completedWordsCount, setCompletedWordsCount] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
+    try {
+      const savedKeys = localStorage.getItem("stitchlab_completed_word_keys");
+      if (savedKeys) {
+        const parsed = JSON.parse(savedKeys);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.length;
+        }
+      }
+    } catch (e) {}
     return parseInt(localStorage.getItem("stitchlab_completed_words_count") || "0", 10);
   });
   const [studentSemester, setStudentSemester] = useState<string>(() => {
@@ -486,6 +514,7 @@ export default function App() {
   const [isOnline, setIsOnline] = useState<boolean>(() => typeof window !== "undefined" ? window.navigator.onLine : true);
   const [showSyncModal, setShowSyncModal] = useState<boolean>(false);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [showSkippedWordsList, setShowSkippedWordsList] = useState<boolean>(false);
   const [syncInputCode, setSyncInputCode] = useState<string>("");
   const [currentSyncCode, setCurrentSyncCode] = useState<string>("");
   const [copiedUid, setCopiedUid] = useState<boolean>(false);
@@ -525,6 +554,20 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("stitchlab_completed_words_count", completedWordsCount.toString());
   }, [completedWordsCount]);
+
+  useEffect(() => {
+    if (completedWordsCount > completedWordKeys.length) {
+      const diff = completedWordsCount - completedWordKeys.length;
+      const updated = [...completedWordKeys];
+      for (let i = 0; i < diff; i++) {
+        updated.push(`retroactive_word_${updated.length + i + 1}`);
+      }
+      setCompletedWordKeys(updated);
+      localStorage.setItem("stitchlab_completed_word_keys", JSON.stringify(updated));
+    } else if (completedWordKeys.length > completedWordsCount) {
+      setCompletedWordsCount(completedWordKeys.length);
+    }
+  }, [completedWordsCount, completedWordKeys]);
 
   useEffect(() => {
     localStorage.setItem("stitchlab_student_semester", studentSemester);
@@ -3225,6 +3268,14 @@ export default function App() {
                     completedWordsCount={completedWordsCount}
                     setCompletedWordsCount={setCompletedWordsCount}
                     studentSemester={studentSemester}
+                    points={points}
+                    setPoints={setPoints}
+                    completedWordKeys={completedWordKeys}
+                    setCompletedWordKeys={setCompletedWordKeys}
+                    skippedWordKeys={skippedWordKeys}
+                    setSkippedWordKeys={setSkippedWordKeys}
+                    reviewTargetWord={reviewTargetWord}
+                    setReviewTargetWord={setReviewTargetWord}
                     onUnlockGroup={(gKey) => {
                       if (unlockedAdvertiserGroups.includes(gKey)) return;
                       const prevTotal = unlockedAdvertiserGroups.length;
@@ -3683,7 +3734,7 @@ export default function App() {
       {/* 4. UNIFIED SETTINGS GEAR MODAL */}
       {showSettingsModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 text-slate-800" dir="rtl">
-          <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-hidden text-right text-slate-800 animate-fadeIn">
+          <div className="bg-white rounded-[32px] max-w-md w-full border border-purple-100 shadow-2xl p-6 md:p-8 space-y-6 relative overflow-y-auto max-h-[88vh] text-right text-slate-800 animate-fadeIn scrollbar-thin">
             
             <button
               onClick={() => {
@@ -3948,6 +3999,87 @@ export default function App() {
                       <h4 className="text-sm font-black text-pink-950">مركز الدعم والمساعدة المباشرة 🤝</h4>
                     </div>
                   </button>
+
+                  {/* Option 5: Skipped Words Review Box */}
+                  <div className="w-full rounded-2xl border border-rose-150 bg-rose-50/15 overflow-hidden transition-all duration-300">
+                    <button
+                      type="button"
+                      onClick={() => setShowSkippedWordsList(!showSkippedWordsList)}
+                      className="w-full p-4 flex items-center justify-between hover:bg-rose-50/30 transition-all text-right cursor-pointer"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center text-rose-700 shrink-0 select-none text-lg">
+                          ⏩
+                        </div>
+                        <div className="text-right">
+                          <h4 className="text-sm font-black text-rose-950">الكلمات المتخطاة ({skippedWordKeys.length})</h4>
+                        </div>
+                      </div>
+                      <span className={`text-slate-400 font-bold text-xs transition-transform duration-200 ${showSkippedWordsList ? "rotate-180 text-rose-600" : ""}`}>
+                        ▼
+                      </span>
+                    </button>
+
+                    {showSkippedWordsList && (
+                      <div className="p-4 pt-0 border-t border-rose-100/40 space-y-3 animate-fadeIn">
+                        <div className="bg-rose-50/60 p-2.5 rounded-xl border border-rose-100/50 text-[10.5px] font-bold text-rose-950 leading-relaxed mt-2">
+                          الكلمات التي تخطيتها وتريد مراجعتها للفوز بنقاطها 🎯
+                        </div>
+
+                        {skippedWordKeys.length === 0 ? (
+                          <div className="text-xs text-slate-400 font-bold bg-slate-50/80 text-center py-4 rounded-xl border border-rose-100/30">
+                            رائع! لا توجد كلمات متخطاة حالياً 🎉
+                          </div>
+                        ) : (
+                          <div className="max-h-[180px] overflow-y-auto space-y-1.5 pr-0.5" id="skipped-words-settings-scoller">
+                            {skippedWordKeys.map((wordKey) => {
+                              // Try finding matching word definition for meaning from local GSheet cached words
+                              let meaning = "";
+                              try {
+                                const cached = localStorage.getItem("stitchlab_sheet_words");
+                                if (cached) {
+                                  const parsed = JSON.parse(cached);
+                                  const match = parsed.find((w: any) => w.word.toLowerCase().trim() === wordKey.toLowerCase().trim());
+                                  if (match) {
+                                    meaning = match.meaning;
+                                  }
+                                }
+                              } catch (e) {}
+
+                              return (
+                                <div 
+                                  key={wordKey} 
+                                  className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-rose-100/50 hover:border-rose-200 transition-all text-xs shadow-xs"
+                                >
+                                  <div className="text-right flex flex-col gap-0.5 max-w-[60%]">
+                                    <span className="font-sans font-black text-slate-800 capitalize select-all">
+                                      {wordKey}
+                                    </span>
+                                    {meaning && (
+                                      <span className="text-[10.5px] text-slate-400 font-bold truncate">
+                                        {meaning}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReviewTargetWord(wordKey);
+                                      setShowSettingsModal(false);
+                                      setAcademyViewOpen(false);
+                                    }}
+                                    className="py-1 px-3 bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white text-[10px] font-black rounded-lg transition-all cursor-pointer active:scale-95 shadow-xs"
+                                  >
+                                    العودة للمراجعة 🔁
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
 
 
                 </div>
